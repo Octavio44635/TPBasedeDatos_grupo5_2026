@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 def conexion():
 
-    load_dotenv()
+    load_dotenv(override=True)
     usuario = os.getenv('DB_USER')
     password = os.getenv('DB_PASS')
     dsn = os.getenv("DSN")
