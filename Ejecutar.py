@@ -6,7 +6,7 @@ load_dotenv(override=True)
 
 def ejecutar_script_sql(archivo_sql):
 
-    print(f"Conectando con Usuario='{os.getenv('DB_USER')}', Password='{os.getenv('DB_PASS')}', DSN='{os.getenv('DSN')}'")
+    # print(f"Conectando con Usuario='{os.getenv('DB_USER')}', Password='{os.getenv('DB_PASS')}', DSN='{os.getenv('DSN')}'")
 
     conn = oracledb.connect(
         user=os.getenv('DB_USER'),
@@ -42,4 +42,4 @@ def ejecutar_script_sql(archivo_sql):
 
 if __name__ == "__main__":
 
-    ejecutar_script_sql("CreateTablas_withDrop.sql")
+    ejecutar_script_sql("create-table.sql")
