@@ -205,7 +205,7 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20002,'La asignación de cama no puede ser posterior al fin de la internación.');
     END IF;
 END;
-
+/
 
 CREATE OR REPLACE TRIGGER trg_medico_dispuesto
 BEFORE INSERT OR UPDATE ON CUBIERTA_POR
@@ -221,7 +221,7 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20003, 'El médico no está dispuesto a realizar guardias en esta especialidad.');
     END IF;
 END;
-
+/
 CREATE OR REPLACE TRIGGER trg_limite_guardias
 BEFORE INSERT OR UPDATE ON CUBIERTA_POR
 FOR EACH ROW
@@ -247,7 +247,7 @@ BEGIN
     END IF;
     COMMIT;
 END;
-
+/
 CREATE OR REPLACE TRIGGER trg_liberar_cama_fin_int
 AFTER UPDATE OF fecha_fin ON INTERNACION
 FOR EACH ROW
@@ -269,7 +269,7 @@ BEGIN
       AND nro_cama = v_nro_cama;
       
 END;
-
+/
 CREATE OR REPLACE TRIGGER trg_liberar_cama_cambio
 AFTER INSERT ON POSEE
 FOR EACH ROW
@@ -295,4 +295,4 @@ EXCEPTION
     WHEN NO_DATA_FOUND THEN
         NULL;
 END;
-
+/
