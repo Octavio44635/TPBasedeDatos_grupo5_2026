@@ -113,7 +113,6 @@ def traducir_error_oracle(error, contexto=None):
     restricciones CHECK, UNIQUE, FK, NOT NULL y errores de compilación.
     """
     mensaje_original = str(error)
-    mensaje_mayus = mensaje_original.upper()
     codigo_oracle = None
 
     if isinstance(error, oracledb.DatabaseError):
@@ -121,9 +120,11 @@ def traducir_error_oracle(error, contexto=None):
             error_obj, = error.args
             codigo_oracle = error_obj.code
             mensaje_original = error_obj.message
-            mensaje_mayus = mensaje_original.upper()
         except Exception:
             pass
+
+    mensaje_original = re.sub(r'\s*Help:\s*https?://\S+', '', mensaje_original, flags=re.IGNORECASE).strip()
+    mensaje_mayus = mensaje_original.upper()
 
     # --------------------------------------------------------------------------
     # 1. ERRORES LANZADOS POR TRIGGERS DEL PROYECTO (RAISE_APPLICATION_ERROR)
@@ -158,6 +159,12 @@ def traducir_error_oracle(error, contexto=None):
         return (
             "❌ MÉDICO NO DISPUESTO A GUARDIA (Trigger trg_medico_dispuesto):\n"
             "Explicación humana: En la tabla TIENE se registró que este médico NO está dispuesto a realizar guardias para esta especialidad.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "TRG_MEDICO_DISPUESTO" in mensaje_mayus and (codigo_oracle == 1403 or "01403" in mensaje_mayus):
+        return (
+            "❌ ESPECIALIDAD NO REGISTRADA PARA EL MÉDICO (Trigger trg_medico_dispuesto):\n"
+            "Explicación humana: El médico seleccionado no tiene registrada esa especialidad en la tabla TIENE, por lo que no puede cubrirla en una guardia.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "20005" in mensaje_mayus:
@@ -262,6 +269,12 @@ def traducir_error_oracle(error, contexto=None):
             "Explicación humana: La fecha de fin de vacaciones debe ser posterior a la fecha de inicio.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
+    if "CHK_GUARDIA_TURNO" in mensaje_mayus:
+        return (
+            "❌ TURNO DE GUARDIA INVÁLIDO (Regla CHECK):\n"
+            "Explicación humana: Los turnos de guardia solo pueden ser 'MAÑANA', 'TARDE' o 'NOCHE'.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
 
     # --------------------------------------------------------------------------
     # 4. CLAVES DUPLICADAS (ORA-00001)
@@ -314,6 +327,12 @@ def traducir_error_oracle(error, contexto=None):
             "Explicación humana: Esta habitación ya tiene asignada esa ronda para ese día de la semana.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
+    if "PK_CUBIERTA_POR" in mensaje_mayus:
+        return (
+            "❌ GUARDIA YA ASIGNADA AL MÉDICO (Dato Duplicado):\n"
+            "Explicación humana: Este médico ya está asignado a esa guardia para esa misma especialidad.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
 
     # --------------------------------------------------------------------------
     # 5. CLAVES FORÁNEAS (ORA-02291 - FOREIGN KEY INEXISTENTE)
@@ -340,6 +359,24 @@ def traducir_error_oracle(error, contexto=None):
         return (
             "❌ HABITACIÓN NO ENCONTRADA:\n"
             "Explicación humana: El ID de habitación ingresado no existe en el hospital.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "FK_CUBIERTA_MEDICO" in mensaje_mayus:
+        return (
+            "❌ MÉDICO NO ENCONTRADO:\n"
+            "Explicación humana: La matrícula médica seleccionada no existe en la base de datos.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "FK_CUBIERTA_ESPECIALIDAD" in mensaje_mayus:
+        return (
+            "❌ ESPECIALIDAD NO ENCONTRADA:\n"
+            "Explicación humana: La especialidad seleccionada no existe en la base de datos.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "FK_CUBIERTA_GUARDIA" in mensaje_mayus:
+        return (
+            "❌ GUARDIA NO ENCONTRADA:\n"
+            "Explicación humana: La guardia seleccionada no existe en la base de datos.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
 
@@ -521,6 +558,7 @@ class HospitalApp(tk.Tk):
             self.log_exito(msg)
             messagebox.showinfo("Operación Finalizada", msg)
             self.cargar_camas_libres()
+            self.refrescar_panel_guardias()
 
         except Exception as e:
             self.log_error(f"Error crítico al procesar '{archivo}':\n{traducir_error_oracle(e)}")
@@ -1361,6 +1399,10 @@ class HospitalApp(tk.Tk):
         notebook_altas.add(tab_cama, text=" 🛏️ Camas ")
         self.construir_subtab_cama(tab_cama)
 
+        tab_guardia = ttk.Frame(notebook_altas, padding=12)
+        notebook_altas.add(tab_guardia, text=" 🛡️ Guardias ")
+        self.construir_subtab_guardia(tab_guardia)
+
     # 1. Subtab Paciente
     def construir_subtab_paciente(self, parent):
         frame_form = ttk.LabelFrame(parent, text=" Datos del Paciente ", padding=10)
@@ -1662,6 +1704,7 @@ class HospitalApp(tk.Tk):
             self.med_ruta_foto = None
             self.lbl_foto_nombre.config(text="Sin foto")
             self.cargar_lista_medicos()
+            self.cargar_combos_asignacion_guardia()
 
         except Exception as e:
             if conn:
@@ -2155,6 +2198,396 @@ class HospitalApp(tk.Tk):
             if conn:
                 conn.close()
 
+    # 6. Subtab Guardia
+    def construir_subtab_guardia(self, parent):
+        columna_izq = ttk.Frame(parent)
+        columna_izq.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+
+        frame_form = ttk.LabelFrame(columna_izq, text=" Crear Nueva Guardia ", padding=10)
+        frame_form.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(frame_form, text="Fecha (DD/MM/YYYY):").grid(row=0, column=0, sticky="w", pady=4)
+        self.guardia_fecha = ttk.Entry(frame_form, width=22)
+        self.guardia_fecha.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        self.guardia_fecha.grid(row=0, column=1, pady=4)
+
+        ttk.Label(frame_form, text="Turno:").grid(row=1, column=0, sticky="w", pady=4)
+        self.guardia_turno = ttk.Combobox(
+            frame_form,
+            values=["MAÑANA", "TARDE", "NOCHE"],
+            state="readonly",
+            width=20
+        )
+        self.guardia_turno.set("MAÑANA")
+        self.guardia_turno.grid(row=1, column=1, pady=4)
+
+        btn_guardar = tk.Button(
+            frame_form,
+            text="💾 Crear Guardia",
+            bg="#276749",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="groove",
+            cursor="hand2",
+            command=self.accion_insertar_guardia
+        )
+        btn_guardar.grid(row=2, column=0, columnspan=2, pady=10, sticky="ew")
+
+        frame_asignar = ttk.LabelFrame(columna_izq, text=" 🩺 Asignar Guardia No Asignada a Médico ", padding=10)
+        frame_asignar.pack(fill=tk.X)
+        frame_asignar.columnconfigure(1, weight=1)
+
+        ttk.Label(frame_asignar, text="Guardia sin asignar:").grid(row=0, column=0, sticky="w", pady=4)
+        self.cb_guardia_sin_asignar = ttk.Combobox(frame_asignar, state="readonly", width=36)
+        self.cb_guardia_sin_asignar.grid(row=0, column=1, pady=4, padx=(6, 0), sticky="ew")
+
+        ttk.Label(frame_asignar, text="Médico:").grid(row=1, column=0, sticky="w", pady=4)
+        self.cb_guardia_medico = ttk.Combobox(frame_asignar, state="readonly", width=36)
+        self.cb_guardia_medico.grid(row=1, column=1, pady=4, padx=(6, 0), sticky="ew")
+        self.cb_guardia_medico.bind("<<ComboboxSelected>>", self.cargar_especialidades_medico_guardia)
+
+        ttk.Label(frame_asignar, text="Especialidad:").grid(row=2, column=0, sticky="w", pady=4)
+        self.cb_guardia_especialidad = ttk.Combobox(frame_asignar, state="readonly", width=36)
+        self.cb_guardia_especialidad.grid(row=2, column=1, pady=4, padx=(6, 0), sticky="ew")
+        self.cb_guardia_especialidad.bind("<<ComboboxSelected>>", self.actualizar_info_especialidad_guardia)
+
+        self.lbl_guardia_esp_info = ttk.Label(
+            frame_asignar,
+            text="",
+            font=("Segoe UI", 8, "italic"),
+            foreground="#4A5568"
+        )
+        self.lbl_guardia_esp_info.grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 4))
+
+        btn_asignar = tk.Button(
+            frame_asignar,
+            text="🔗 Asignar Guardia a Médico",
+            bg="#2B6CB0",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="groove",
+            cursor="hand2",
+            command=self.accion_asignar_guardia_medico
+        )
+        btn_asignar.grid(row=4, column=0, columnspan=2, pady=8, sticky="ew")
+
+        frame_lista = ttk.LabelFrame(parent, text=" Guardias Programadas ", padding=10)
+        frame_lista.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        self.tabla_guardias = ttk.Treeview(frame_lista, columns=("ID", "Fecha", "Turno", "Medicos"), show="headings")
+        self.tabla_guardias.heading("ID", text="ID Guardia")
+        self.tabla_guardias.heading("Fecha", text="Fecha")
+        self.tabla_guardias.heading("Turno", text="Turno")
+        self.tabla_guardias.heading("Medicos", text="Médicos Asignados")
+        self.tabla_guardias.column("ID", width=75, anchor="center")
+        self.tabla_guardias.column("Fecha", width=95, anchor="center")
+        self.tabla_guardias.column("Turno", width=85, anchor="center")
+        self.tabla_guardias.column("Medicos", width=260, anchor="w")
+        self.tabla_guardias.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
+        self.tabla_guardias.bind("<Double-1>", self.on_doble_clic_guardia)
+
+        ttk.Label(
+            frame_lista,
+            text=" Doble clic en una guardia 'Sin asignar' la precarga para asignar.",
+            font=("Segoe UI", 8, "italic"),
+            foreground="#4A5568"
+        ).pack(anchor="w", pady=(0, 4))
+
+        btn_refrescar = tk.Button(
+            frame_lista,
+            text="🔄 Refrescar Guardias",
+            bg="#E2E8F0",
+            cursor="hand2",
+            command=self.refrescar_panel_guardias
+        )
+        btn_refrescar.pack(anchor="w")
+
+        self.refrescar_panel_guardias()
+
+    def on_doble_clic_guardia(self, event):
+        """Precarga en el selector una guardia sin asignar al hacer doble clic."""
+        item = self.tabla_guardias.selection()
+        if not item:
+            return
+        valores = self.tabla_guardias.item(item[0], "values")
+        if not valores or len(valores) < 4:
+            return
+
+        id_guardia = str(valores[0])
+        estado_asig = str(valores[3])
+        if estado_asig != "Sin asignar":
+            self.log_info(f"La guardia #{id_guardia} ya está asignada ({estado_asig}).")
+            return
+
+        for opcion in self.cb_guardia_sin_asignar["values"]:
+            if opcion.startswith(f"{id_guardia} - "):
+                self.cb_guardia_sin_asignar.set(opcion)
+                self.log_info(f"Guardia #{id_guardia} seleccionada para asignar.")
+                break
+
+    def refrescar_panel_guardias(self):
+        """Actualiza tanto la tabla de guardias como los selectores de asignación."""
+        self.cargar_lista_guardias()
+        self.cargar_combos_asignacion_guardia()
+
+    def accion_insertar_guardia(self):
+        fecha_str = self.guardia_fecha.get().strip()
+        turno = self.guardia_turno.get().strip().upper()
+
+        if not (fecha_str and turno):
+            messagebox.showwarning("Atención", "Fecha y turno son obligatorios.")
+            return
+
+        fmt = 'YYYY-MM-DD' if '-' in fecha_str else 'DD/MM/YYYY'
+
+        conn = None
+        cursor = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            id_guardia_var = cursor.var(oracledb.NUMBER)
+
+            cursor.execute(f"""
+                INSERT INTO GUARDIA (turno, fecha)
+                VALUES (:1, TO_DATE(:2, '{fmt}'))
+                RETURNING id_guardia INTO :3
+            """, [turno, fecha_str, id_guardia_var])
+
+            conn.commit()
+            nuevo_id = int(id_guardia_var.getvalue()[0])
+            self.log_exito(f"Guardia #{nuevo_id} ({turno} del {fecha_str}) creada con éxito.")
+            messagebox.showinfo("Éxito", f"Guardia #{nuevo_id} creada exitosamente.")
+            self.refrescar_panel_guardias()
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            self.log_error(f"Error al crear guardia:\n{traducir_error_oracle(e)}")
+            messagebox.showerror("Error", traducir_error_oracle(e))
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    def cargar_lista_guardias(self):
+        if not hasattr(self, 'tabla_guardias'):
+            return
+        for item in self.tabla_guardias.get_children():
+            self.tabla_guardias.delete(item)
+
+        conn = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT g.id_guardia,
+                       TO_CHAR(g.fecha, 'DD/MM/YYYY'),
+                       g.turno,
+                       COALESCE(
+                           (SELECT LISTAGG(p.apellido || ' (' || cp.numero_de_matricula || ' - ' || e.nombre || ')', ', ')
+                                   WITHIN GROUP (ORDER BY p.apellido, e.nombre)
+                            FROM CUBIERTA_POR cp
+                            JOIN MEDICO m ON cp.numero_de_matricula = m.numero_de_matricula
+                            JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
+                            JOIN ESPECIALIDAD e ON cp.id_especialidad = e.id_especialidad
+                            WHERE cp.id_guardia = g.id_guardia),
+                           'Sin asignar'
+                       ) AS medicos_asignados
+                FROM GUARDIA g
+                ORDER BY g.fecha DESC, g.id_guardia DESC
+            """)
+            for row in cursor.fetchall():
+                self.tabla_guardias.insert("", tk.END, values=row)
+            cursor.close()
+        except Exception as e:
+            self.log_error(f"No se pudieron cargar las guardias: {traducir_error_oracle(e)}")
+        finally:
+            if conn:
+                conn.close()
+
+    def cargar_combos_asignacion_guardia(self):
+        """Carga guardias sin asignar, médicos y especialidades en sus selectores."""
+        if not hasattr(self, 'cb_guardia_sin_asignar'):
+            return
+
+        conn = None
+        cursor = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT g.id_guardia, TO_CHAR(g.fecha, 'DD/MM/YYYY'), g.turno
+                FROM GUARDIA g
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM CUBIERTA_POR cp WHERE cp.id_guardia = g.id_guardia
+                )
+                ORDER BY g.fecha ASC, g.id_guardia ASC
+            """)
+            opciones_guardias = [f"{g[0]} - {g[1]} ({g[2]})" for g in cursor.fetchall()]
+            sel_guardia = self.cb_guardia_sin_asignar.get()
+            self.cb_guardia_sin_asignar["values"] = opciones_guardias
+            if sel_guardia in opciones_guardias:
+                self.cb_guardia_sin_asignar.set(sel_guardia)
+            elif opciones_guardias:
+                self.cb_guardia_sin_asignar.current(0)
+            else:
+                self.cb_guardia_sin_asignar.set("")
+
+            cursor.execute("""
+                SELECT m.numero_de_matricula, p.apellido, p.nombre
+                FROM MEDICO m
+                JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
+                ORDER BY p.apellido, p.nombre
+            """)
+            opciones_medicos = [f"{m[0]} - {m[1]}, {m[2]}" for m in cursor.fetchall()]
+            sel_medico = self.cb_guardia_medico.get()
+            self.cb_guardia_medico["values"] = opciones_medicos
+            if sel_medico in opciones_medicos:
+                self.cb_guardia_medico.set(sel_medico)
+            elif opciones_medicos:
+                self.cb_guardia_medico.current(0)
+            else:
+                self.cb_guardia_medico.set("")
+
+            self.cargar_especialidades_medico_guardia(cursor=cursor)
+
+        except Exception as e:
+            self.log_error(f"No se pudieron cargar los datos para asignar guardias: {traducir_error_oracle(e)}")
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    def cargar_especialidades_medico_guardia(self, event=None, cursor=None):
+        """Carga las especialidades ordenadas por disponibilidad para el médico seleccionado."""
+        if not hasattr(self, 'cb_guardia_especialidad'):
+            return
+
+        med_sel = self.cb_guardia_medico.get().strip()
+        if not med_sel:
+            self.cb_guardia_especialidad["values"] = []
+            self.cb_guardia_especialidad.set("")
+            self.actualizar_info_especialidad_guardia()
+            return
+
+        matricula = med_sel.split(" - ", 1)[0].strip()
+        conn_propia = None
+        cursor_local = cursor
+        try:
+            if cursor_local is None:
+                conn_propia = obtener_conexion()
+                cursor_local = conn_propia.cursor()
+
+            cursor_local.execute("""
+                SELECT e.id_especialidad, e.nombre, t.dispuesto
+                FROM ESPECIALIDAD e
+                LEFT JOIN TIENE t
+                       ON e.id_especialidad = t.id_especialidad
+                      AND t.numero_de_matricula = :1
+                ORDER BY CASE
+                             WHEN UPPER(t.dispuesto) = 'SI' THEN 0
+                             WHEN UPPER(t.dispuesto) = 'NO' THEN 1
+                             ELSE 2
+                         END,
+                         e.nombre
+            """, [matricula])
+
+            opciones_esp = []
+            for id_esp, nombre, dispuesto in cursor_local.fetchall():
+                estado = f"Disp: {dispuesto}" if dispuesto is not None else "No reg."
+                opciones_esp.append(f"{id_esp} - {nombre} ({estado})")
+
+            self.cb_guardia_especialidad["values"] = opciones_esp
+            if opciones_esp:
+                self.cb_guardia_especialidad.current(0)
+            else:
+                self.cb_guardia_especialidad.set("")
+            self.actualizar_info_especialidad_guardia()
+
+        except Exception as e:
+            self.log_error(f"No se pudieron cargar las especialidades del médico: {traducir_error_oracle(e)}")
+        finally:
+            if conn_propia:
+                if cursor_local:
+                    cursor_local.close()
+                conn_propia.close()
+
+    def actualizar_info_especialidad_guardia(self, event=None):
+        """Muestra el estado de disponibilidad de la especialidad seleccionada."""
+        if not hasattr(self, 'lbl_guardia_esp_info'):
+            return
+
+        esp_sel = self.cb_guardia_especialidad.get().strip()
+        esp_up = esp_sel.upper()
+        if not esp_sel:
+            self.lbl_guardia_esp_info.config(text="", foreground="#4A5568")
+        elif "(DISP: SI)" in esp_up:
+            self.lbl_guardia_esp_info.config(
+                text="✅ Médico dispuesto a cubrir esta especialidad.",
+                foreground="#276749"
+            )
+        elif "(DISP: NO)" in esp_up:
+            self.lbl_guardia_esp_info.config(
+                text="⚠️ Figura NO dispuesto en TIENE para esta especialidad.",
+                foreground="#C53030"
+            )
+        else:
+            self.lbl_guardia_esp_info.config(
+                text="⚠️ Especialidad sin registrar en TIENE para este médico.",
+                foreground="#C53030"
+            )
+
+    def accion_asignar_guardia_medico(self):
+        """Asigna una guardia sin asignar a un médico y especialidad en CUBIERTA_POR."""
+        guardia_sel = self.cb_guardia_sin_asignar.get().strip()
+        med_sel = self.cb_guardia_medico.get().strip()
+        esp_sel = self.cb_guardia_especialidad.get().strip()
+
+        if not (guardia_sel and med_sel and esp_sel):
+            messagebox.showwarning(
+                "Campos Incompletos",
+                "Por favor selecciona una guardia sin asignar, un médico y una especialidad."
+            )
+            return
+
+        try:
+            id_guardia = int(guardia_sel.split(" - ", 1)[0].strip())
+            matricula = med_sel.split(" - ", 1)[0].strip()
+            id_especialidad = int(esp_sel.split(" - ", 1)[0].strip())
+        except ValueError:
+            messagebox.showerror("Dato Inválido", "Los identificadores seleccionados no tienen un formato válido.")
+            return
+
+        conn = None
+        cursor = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia)
+                VALUES (:1, :2, :3)
+            """, [matricula, id_especialidad, id_guardia])
+            conn.commit()
+
+            msg = f"Guardia #{id_guardia} asignada con éxito al médico '{med_sel}'."
+            self.log_exito(msg)
+            messagebox.showinfo("Asignación Exitosa", msg)
+            self.refrescar_panel_guardias()
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            self.log_error(f"Error al asignar guardia:\n{traducir_error_oracle(e)}")
+            messagebox.showerror("Error al Asignar Guardia", traducir_error_oracle(e))
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
     # ==========================================================================
     # TAB 3: CONSOLA SQL PARA EL PARCIAL
     # ==========================================================================
@@ -2198,6 +2631,7 @@ class HospitalApp(tk.Tk):
             ("Camas por Sector", "SELECT s.nombre AS sector, COUNT(c.nro_cama) AS camas_libres FROM SECTOR s LEFT JOIN HABITACION h ON s.id_sector = h.id_sector LEFT JOIN CAMA c ON h.id_habitacion = c.id_habitacion AND UPPER(c.estado) = 'LIBRE' GROUP BY s.nombre ORDER BY camas_libres DESC;"),
             ("Camas Libres", "SELECT s.nombre, h.id_habitacion, h.piso, c.nro_cama FROM CAMA c JOIN HABITACION h ON c.id_habitacion = h.id_habitacion JOIN SECTOR s ON h.id_sector = s.id_sector WHERE UPPER(c.estado) = 'LIBRE';"),
             ("Auditoría Guardias", "SELECT * FROM AUDITORIA_GUARDIAS ORDER BY fecha_operacion DESC;"),
+            ("Guardias", "SELECT g.id_guardia, g.fecha, g.turno, cp.numero_de_matricula FROM GUARDIA g LEFT JOIN CUBIERTA_POR cp ON g.id_guardia = cp.id_guardia ORDER BY g.fecha DESC;"),
             ("Comentarios Recorridos", "SELECT * FROM COMENTARIO;"),
             ("Internaciones", "SELECT * FROM INTERNACION ORDER BY id_internacion DESC;"),
             ("Historial POSEE", "SELECT * FROM POSEE ORDER BY fechaHora DESC;")

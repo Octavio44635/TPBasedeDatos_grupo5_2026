@@ -398,6 +398,7 @@ BEGIN
     INSERT INTO AUDITORIA_GUARDIAS (usuario_db, fecha_operacion, tipo_operacion, numero_de_matricula, id_guardia)
     VALUES (USER, SYSTIMESTAMP, v_operacion, v_matricula, v_id_guardia);
 END;
+/
 
 
 CREATE OR REPLACE TRIGGER trg_evitar_autoatencion
