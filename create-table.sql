@@ -268,18 +268,22 @@ DECLARE
     v_id_habitacion NUMBER(7);
     v_nro_cama NUMBER(1);
 BEGIN
-    SELECT id_habitacion, nro_cama 
-    INTO v_id_habitacion, v_nro_cama
-    FROM POSEE
-    WHERE id_internacion = :NEW.id_internacion
-    ORDER BY fechaHora DESC
-    FETCH FIRST 1 ROW ONLY;
+    BEGIN
+        SELECT id_habitacion, nro_cama 
+        INTO v_id_habitacion, v_nro_cama
+        FROM POSEE
+        WHERE id_internacion = :NEW.id_internacion
+        ORDER BY fechaHora DESC
+        FETCH FIRST 1 ROW ONLY;
 
-    UPDATE CAMA
-    SET estado = 'LIBRE'
-    WHERE id_habitacion = v_id_habitacion
-      AND nro_cama = v_nro_cama;
-      
+        UPDATE CAMA
+        SET estado = 'LIBRE'
+        WHERE id_habitacion = v_id_habitacion
+          AND nro_cama = v_nro_cama;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            NULL;
+    END;
 END;
 /
 CREATE OR REPLACE TRIGGER trg_liberar_cama_cambio

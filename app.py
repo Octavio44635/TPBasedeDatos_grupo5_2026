@@ -609,8 +609,8 @@ class HospitalApp(tk.Tk):
         )
         btn_ejecutar.grid(row=2, column=0, columnspan=4, pady=(8, 2), sticky="ew")
 
-        # 2. Formulario: Traslado / Cambio de Cama
-        frame_traslado = ttk.LabelFrame(columna_izq, text=" 🔄 Traslado / Cambio de Cama (Trigger trg_liberar_cama_cambio) ", padding=10)
+        # 2. Formulario: Traslado / Cambio de Cama y Alta Médica
+        frame_traslado = ttk.LabelFrame(columna_izq, text=" 🔄 Gestión de Internación (Traslado / Alta Médica) ", padding=10)
         frame_traslado.pack(fill=tk.X, pady=(0, 8))
 
         ttk.Label(frame_traslado, text="ID Internación:").grid(row=0, column=0, sticky="w", pady=3)
@@ -648,7 +648,7 @@ class HospitalApp(tk.Tk):
         self.txt_traslado_cama.grid(row=2, column=3, pady=3, sticky="w")
 
         frame_botones_traslado = ttk.Frame(frame_traslado)
-        frame_botones_traslado.grid(row=3, column=0, columnspan=4, pady=(8, 2), sticky="ew")
+        frame_botones_traslado.grid(row=3, column=0, columnspan=4, pady=(6, 4), sticky="ew")
 
         btn_usar_cama_sel = tk.Button(
             frame_botones_traslado,
@@ -671,6 +671,20 @@ class HospitalApp(tk.Tk):
             command=self.accion_trasladar_cama
         )
         btn_ejecutar_traslado.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+
+        ttk.Separator(frame_traslado, orient="horizontal").grid(row=4, column=0, columnspan=4, sticky="ew", pady=(8, 6))
+
+        btn_finalizar_internacion = tk.Button(
+            frame_traslado,
+            text="🏁 Finalizar Internación / Alta Médica (Libera Cama)",
+            bg="#9B2C2C",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="groove",
+            cursor="hand2",
+            command=self.accion_finalizar_internacion
+        )
+        btn_finalizar_internacion.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(0, 2))
 
         # 3. Consultar Comentarios (Stored Procedure)
         frame_sp_comentarios = ttk.LabelFrame(columna_izq, text=" 💬 Visitas Médicas (Stored Procedure) ", padding=8)
@@ -877,9 +891,19 @@ class HospitalApp(tk.Tk):
             cursor.close()
             opciones = [f"{f[0]} - {f[1]} {f[2]} (DNI {f[3]})" for f in filas]
             self.txt_traslado_id_int['values'] = opciones
-            if opciones and not self.txt_traslado_id_int.get():
-                self.txt_traslado_id_int.set(opciones[0])
+            
+            val_actual = self.txt_traslado_id_int.get().strip()
+            if opciones:
+                if not val_actual or not any(val_actual.startswith(f"{f[0]} ") or val_actual == str(f[0]) for f in filas):
+                    self.txt_traslado_id_int.set(opciones[0])
                 self.accion_consultar_cama_actual()
+            else:
+                self.txt_traslado_id_int.set("")
+                if hasattr(self, 'lbl_traslado_info'):
+                    self.lbl_traslado_info.config(
+                        text="No hay internaciones activas en este momento.",
+                        foreground="#4A5568"
+                    )
         except Exception:
             pass
         finally:
@@ -925,6 +949,11 @@ class HospitalApp(tk.Tk):
             """, [id_int])
             row_cama = cursor.fetchone()
             cursor.close()
+
+            # Sincronizar también el ID en la caja de Visitas Médicas (Stored Procedure)
+            if hasattr(self, 'txt_id_int_comentario'):
+                self.txt_id_int_comentario.delete(0, tk.END)
+                self.txt_id_int_comentario.insert(0, str(id_int))
 
             if f_fin is not None:
                 self.lbl_traslado_info.config(
@@ -1055,6 +1084,119 @@ class HospitalApp(tk.Tk):
                 conn.rollback()
             self.log_error(f"Traslado ABORTADO (ROLLBACK aplicado):\n{traducir_error_oracle(e)}")
             messagebox.showerror("Error en Traslado", traducir_error_oracle(e))
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    def accion_finalizar_internacion(self):
+        raw_val = self.txt_traslado_id_int.get().strip()
+        if not raw_val:
+            messagebox.showwarning("Seleccionar Internación", "Por favor selecciona o ingresa el ID de la internación activa que deseas finalizar.")
+            return
+
+        try:
+            id_int = int(raw_val.split()[0].replace("#", ""))
+        except ValueError:
+            self.log_error("ID de Internación debe ser un valor numérico entero.")
+            messagebox.showerror("Dato Inválido", "El ID de internación debe ser un número entero.")
+            return
+
+        conn = None
+        cursor = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+
+            # 1. Validar existencia y estado de la internación
+            cursor.execute("""
+                SELECT i.id_internacion, i.fecha_inicio, i.fecha_fin, i.numero_de_DNI, p.nombre, p.apellido
+                FROM INTERNACION i
+                JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
+                WHERE i.id_internacion = :1
+            """, [id_int])
+            row_int = cursor.fetchone()
+            if not row_int:
+                raise Exception(f"La internación #{id_int} no existe en la base de datos.")
+            if row_int[2] is not None:
+                raise Exception(f"La internación #{id_int} ya finalizó previamente (Alta médica otorgada el {row_int[2].strftime('%d/%m/%Y')}).")
+
+            paciente_nombre = f"{row_int[4]} {row_int[5]} (DNI {row_int[3]})"
+            fecha_inicio = row_int[1]
+
+            # 2. Consultar cama actual del paciente en POSEE
+            cursor.execute("""
+                SELECT id_habitacion, nro_cama
+                FROM POSEE
+                WHERE id_internacion = :1
+                ORDER BY fechaHora DESC
+                FETCH FIRST 1 ROW ONLY
+            """, [id_int])
+            row_cama = cursor.fetchone()
+            hab_act, cama_act = (row_cama[0], row_cama[1]) if row_cama else (None, None)
+            cama_info = f"Habitación {hab_act}, Cama {cama_act}" if hab_act is not None else "Sin cama asignada"
+
+            # 3. Cuadro de confirmación antes de proceder
+            confirmar = messagebox.askyesno(
+                "Confirmar Alta Médica",
+                f"¿Deseas dar el Alta Médica y finalizar la internación #{id_int}?\n\n"
+                f"• Paciente: {paciente_nombre}\n"
+                f"• Cama actual a liberar: {cama_info}\n\n"
+                f"Al confirmar, se actualizará la fecha de alta y el disparador 'trg_liberar_cama_fin_int' liberará la cama automáticamente."
+            )
+            if not confirmar:
+                return
+
+            self.log_info(f"Procesando alta médica para Internación #{id_int} ({paciente_nombre})...")
+
+            # 4. Actualizar fecha_fin en INTERNACION.
+            # En Oracle, el Trigger 'trg_liberar_cama_fin_int' se dispara:
+            # AFTER UPDATE OF fecha_fin ON INTERNACION WHEN (OLD.fecha_fin IS NULL AND NEW.fecha_fin IS NOT NULL)
+            # y ejecuta: UPDATE CAMA SET estado = 'LIBRE' WHERE id_habitacion = v_id_hab AND nro_cama = v_nro_cama;
+            cursor.execute("""
+                UPDATE INTERNACION
+                SET fecha_fin = GREATEST(TRUNC(SYSDATE), fecha_inicio)
+                WHERE id_internacion = :1 AND fecha_fin IS NULL
+            """, [id_int])
+
+            if cursor.rowcount == 0:
+                raise Exception(f"No se pudo actualizar la internación #{id_int}. Verifique si ya estaba finalizada.")
+
+            # Como resguardo si el trigger no estuviera activo en la base:
+            if hab_act is not None and cama_act is not None:
+                cursor.execute("""
+                    UPDATE CAMA
+                    SET estado = 'LIBRE'
+                    WHERE id_habitacion = :1 AND nro_cama = :2 AND estado != 'LIBRE'
+                """, [hab_act, cama_act])
+
+            # Confirmar la transacción
+            conn.commit()
+
+            msg_exito = (
+                f"Transacción confirmada (COMMIT):\n"
+                f"• Internación #{id_int} FINALIZADA con éxito (Alta Médica otorgada).\n"
+                f"• Paciente: {paciente_nombre}\n"
+            )
+            if hab_act is not None:
+                msg_exito += f"• Cama liberada: Habitación {hab_act}, Cama {cama_act} (Estado: LIBRE mediante Trigger 'trg_liberar_cama_fin_int')."
+
+            self.log_exito(msg_exito)
+            messagebox.showinfo("Alta Médica Confirmada", msg_exito)
+
+            # Refrescar la interfaz
+            self.cargar_camas_libres()
+            self.actualizar_combo_internaciones()
+            self.accion_consultar_cama_actual()
+            if hasattr(self, 'cargar_todas_las_camas'):
+                self.cargar_todas_las_camas()
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            self.log_error(f"Alta médica ABORTADA (ROLLBACK aplicado):\n{traducir_error_oracle(e)}")
+            messagebox.showerror("Error en Alta Médica", traducir_error_oracle(e))
         finally:
             if cursor:
                 cursor.close()
