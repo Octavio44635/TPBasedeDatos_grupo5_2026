@@ -9,9 +9,75 @@ from datetime import datetime, date
 # Cargar variables de entorno desde el archivo .env
 load_dotenv(override=True)
 
+# ==============================================================================
+# PARSER ROBUSTO DE SCRIPTS SQL (SOPORTA ';' Y '/' DE PL/SQL)
+# ==============================================================================
+def parsear_script_sql(contenido):
+    """
+    Separa correctamente un script de Oracle que contiene:
+    - Sentencias DDL/DML normales terminadas en ';'
+    - Bloques PL/SQL (TRIGGER, PROCEDURE, FUNCTION) delimitados por '/'
+    """
+    bloques = []
+    lineas = contenido.splitlines()
+    buffer = []
+    en_plsql = False
+
+    for linea in lineas:
+        linea_strip = linea.strip()
+
+        # Ignorar comentarios de una sola línea cuando no estamos dentro de un bloque
+        if not en_plsql and linea_strip.startswith("--"):
+            continue
+
+        linea_up = linea_strip.upper()
+        if any(linea_up.startswith(k) for k in [
+            "CREATE OR REPLACE TRIGGER", "CREATE TRIGGER",
+            "CREATE OR REPLACE PROCEDURE", "CREATE PROCEDURE",
+            "CREATE OR REPLACE FUNCTION", "CREATE FUNCTION",
+            "DECLARE", "BEGIN"
+        ]):
+            en_plsql = True
+
+        if en_plsql:
+            if linea_strip == "/":
+                bloque_sql = "\n".join(buffer).strip()
+                if bloque_sql:
+                    bloques.append(bloque_sql)
+                buffer = []
+                en_plsql = False
+            else:
+                buffer.append(linea)
+        else:
+            buffer.append(linea)
+            if ";" in linea:
+                texto = "\n".join(buffer)
+                partes = texto.split(";")
+                for p in partes[:-1]:
+                    p_limpio = p.strip()
+                    if p_limpio and not p_limpio.startswith("--"):
+                        bloques.append(p_limpio)
+                resto = partes[-1].strip()
+                buffer = [resto] if resto else []
+
+    if buffer:
+        resto_final = "\n".join(buffer).strip()
+        if resto_final and resto_final != "/":
+            for p in resto_final.split(";"):
+                p_limpio = p.strip()
+                if p_limpio and not p_limpio.startswith("--"):
+                    bloques.append(p_limpio)
+
+    return bloques
+
+# ==============================================================================
+# TRADUCTOR DE ERRORES DE ORACLE A LENGUAJE HUMANO (TRIGGERS, CHECKS, FKs)
+# ==============================================================================
 def traducir_error_oracle(error, contexto=None):
     """
-    obtenemos detalle de los errores de manera mas especifica para su entendimiento desde consola segun la restriccion violada
+    Analiza la excepción de Oracle y devuelve una explicación en lenguaje humano
+    súper detallista, mapeando cada código de Trigger (-20001 a -20010),
+    restricciones CHECK, UNIQUE, FK, NOT NULL y errores de compilación.
     """
     mensaje_original = str(error)
     mensaje_mayus = mensaje_original.upper()
@@ -26,7 +92,74 @@ def traducir_error_oracle(error, contexto=None):
         except Exception:
             pass
 
-    #reglas check especificas
+    # --------------------------------------------------------------------------
+    # 1. ERRORES LANZADOS POR TRIGGERS DEL PROYECTO (RAISE_APPLICATION_ERROR)
+    # --------------------------------------------------------------------------
+    if "20008" in mensaje_mayus or "20010" in mensaje_mayus or "AUTOATENCION" in mensaje_mayus:
+        return (
+            "❌ REGLA DE NEGOCIO VIOLADA: UN MÉDICO NO PUEDE AUTO-ATENDERSE\n"
+            "Explicación humana: El médico asignado tiene el mismo número de DNI que el paciente internado.\n"
+            "Por regla de ética y control médico del hospital, un médico no puede ser el profesional a cargo de su propia internación.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "20001" in mensaje_mayus:
+        return (
+            "❌ FECHA DE CAMA ANTERIOR A INTERNACIÓN (Trigger trg_posee_fecha):\n"
+            "Explicación humana: La fecha y hora en que se asigna la cama no puede ser anterior a la fecha en que inició la internación.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "20002" in mensaje_mayus:
+        return (
+            "❌ FECHA DE CAMA POSTERIOR A ALTA (Trigger trg_posee_fecha):\n"
+            "Explicación humana: La asignación de cama no puede tener una fecha posterior al momento en que el paciente recibió el alta médica.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "20003" in mensaje_mayus:
+        return (
+            "❌ MÉDICO NO DISPUESTO A GUARDIA (Trigger trg_medico_dispuesto):\n"
+            "Explicación humana: En la tabla TIENE se registró que este médico NO está dispuesto a realizar guardias para esta especialidad.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "20005" in mensaje_mayus:
+        return (
+            "❌ LÍMITE DE GUARDIAS MENSUALES SUPERADO (Trigger trg_limite_guardias):\n"
+            "Explicación humana: El médico ya alcanzó o superó la cantidad máxima de guardias que indicó estar dispuesto a realizar en este mes.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "20006" in mensaje_mayus:
+        return (
+            "❌ ROL DE PACIENTE ASIGNADO A GUARDIA (Trigger trg_validar_rol_guardia):\n"
+            "Explicación humana: No se puede asignar una guardia médica a una persona que en el sistema está registrada con el rol de 'PACIENTE'.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "20007" in mensaje_mayus:
+        return (
+            "❌ INFORMACIÓN PERSONAL DEL MÉDICO NO ENCONTRADA (Trigger trg_validar_rol_guardia):\n"
+            "Explicación humana: No se encontró la persona asociada a la matrícula médica al intentar validar la guardia.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "20009" in mensaje_mayus:
+        return (
+            "❌ FECHA DE INICIO INVÁLIDA (Trigger trg_validar_fecha_inicio):\n"
+            "Explicación humana: La fecha de inicio de la internación no puede ser una fecha futura posterior a la fecha actual del sistema.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+
+    # --------------------------------------------------------------------------
+    # 2. TRIGGER INVÁLIDO O ERROR DE COMPILACIÓN (ORA-04098)
+    # --------------------------------------------------------------------------
+    if codigo_oracle == 4098 or "ORA-04098" in mensaje_mayus:
+        return (
+            "❌ DISPARADOR (TRIGGER) INVÁLIDO EN ORACLE:\n"
+            "Explicación humana: Uno de los triggers de la base de datos se compiló con errores de sintaxis y quedó en estado INVÁLIDO.\n"
+            "• Causa típica: El script SQL se ejecutó cortando el código por ';' en lugar de compilarse completo con la barra '/'.\n"
+            "• Solución: Haz clic en el botón 'Crear/Reiniciar Tablas' para que la app recompile todos los triggers con el delimitador '/' correcto.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+
+    # --------------------------------------------------------------------------
+    # 3. REGLAS CHECK ESPECÍFICAS (ORA-02290)
+    # --------------------------------------------------------------------------
     if "CHK_MEDICO_CUIL_DNI" in mensaje_mayus:
         return (
             "❌ EL CUIL NO COINCIDE CON EL DNI DEL MÉDICO (Regla de Integridad):\n"
@@ -68,13 +201,13 @@ def traducir_error_oracle(error, contexto=None):
     if "CHK_RONDA_TURNO" in mensaje_mayus:
         return (
             "❌ TURNO DE RONDA NO VÁLIDO (Regla CHECK):\n"
-            "Explicación humana: El turno asignado no es válido. Los turnos de ronda deben ser 1, 2, 3 o 4 (o Mañana, Tarde, Noche).\n"
+            "Explicación humana: El turno asignado no es válido. Los turnos permitidos son 1, 2, 3 o 4 (o Mañana, Tarde, Noche).\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "CHK_RONDA_DIA" in mensaje_mayus:
         return (
             "❌ DÍA DE LA SEMANA INVÁLIDO (Regla CHECK):\n"
-            "Explicación humana: El día de la ronda debe ser un día válido (LUNES, MARTES, MIERCOLES, JUEVES, VIERNES, SABADO o DOMINGO).\n"
+            "Explicación humana: El día de la ronda debe ser válido (LUNES a DOMINGO).\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "CHK_INTERNACION_FECHAS" in mensaje_mayus:
@@ -89,19 +222,14 @@ def traducir_error_oracle(error, contexto=None):
             "Explicación humana: La fecha de fin de vacaciones debe ser posterior a la fecha de inicio.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
-    if "CHK_PERSONA_ROL" in mensaje_mayus:
-        return (
-            "❌ ROL DE PERSONA INVÁLIDO (Regla CHECK):\n"
-            "Explicación humana: El rol asignado a la persona no cumple con las opciones permitidas en la base de datos.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
 
-    #claves duplicadas (UNIQUE)
+    # --------------------------------------------------------------------------
+    # 4. CLAVES DUPLICADAS (ORA-00001)
+    # --------------------------------------------------------------------------
     if "PK_PERSONA" in mensaje_mayus:
         return (
-            "❌ DNI DE PERSONA YA EXISTENTE (Dato Duplicado):\n"
-            "Explicación humana: Ya existe una persona registrada en el hospital con ese mismo número de DNI. "
-            "No se puede registrar dos veces a la misma persona.\n"
+            "❌ DNI YA REGISTRADO (Dato Duplicado):\n"
+            "Explicación humana: Ya existe una persona registrada con ese mismo número de DNI.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "PK_PACIENTE" in mensaje_mayus:
@@ -113,8 +241,7 @@ def traducir_error_oracle(error, contexto=None):
     if "PK_MEDICO" in mensaje_mayus:
         return (
             "❌ MATRÍCULA MÉDICA DUPLICADA (Dato Duplicado):\n"
-            "Explicación humana: Ya existe un médico registrado con esa misma matrícula profesional. "
-            "Cada matrícula debe ser única.\n"
+            "Explicación humana: Ya existe un médico registrado con esa misma matrícula profesional.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "UQ_MEDICO_CUIL" in mensaje_mayus:
@@ -125,22 +252,20 @@ def traducir_error_oracle(error, contexto=None):
         )
     if "UQ_MEDICO_DNI" in mensaje_mayus:
         return (
-            "❌ DNI YA REGISTRADO COMO MÉDICO (Dato Duplicado):\n"
-            "Explicación humana: Ya existe un médico en el sistema con ese número de DNI.\n"
+            "❌ DNI YA ASIGNADO A UN MÉDICO (Dato Duplicado):\n"
+            "Explicación humana: Ese DNI ya está registrado como médico en el hospital.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "PK_CAMA" in mensaje_mayus:
         return (
             "❌ CAMA YA EXISTENTE EN ESTA HABITACIÓN (Dato Duplicado):\n"
-            "Explicación humana: Esa habitación ya tiene registrada una cama con ese mismo número. "
-            "Elige otro número de cama o cárgala en una habitación diferente.\n"
+            "Explicación humana: Esa habitación ya tiene registrada una cama con ese mismo número.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "UQ_SECTOR_NOMBRE" in mensaje_mayus:
         return (
             "❌ NOMBRE DE SECTOR REPETIDO (Dato Duplicado):\n"
-            "Explicación humana: Ya existe un sector con ese mismo nombre en el hospital. "
-            "Los nombres de los sectores no pueden repetirse.\n"
+            "Explicación humana: Ya existe un sector con ese mismo nombre en el hospital.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "PK_COMPUESTA_POR" in mensaje_mayus:
@@ -150,117 +275,52 @@ def traducir_error_oracle(error, contexto=None):
             f"[Detalle técnico: {mensaje_original}]"
         )
 
-    #claves foraneas inexistentes
+    # --------------------------------------------------------------------------
+    # 5. CLAVES FORÁNEAS (ORA-02291 - FOREIGN KEY INEXISTENTE)
+    # --------------------------------------------------------------------------
     if "FK_INTERNACION_PACIENTE" in mensaje_mayus:
         return (
             "❌ PACIENTE NO ENCONTRADO:\n"
-            "Explicación humana: El DNI ingresado no corresponde a ningún paciente registrado. "
-            "Primero debes registrar al paciente en la pestaña 'Carga de Datos' antes de poder internarlo.\n"
+            "Explicación humana: El DNI ingresado no corresponde a ningún paciente registrado en la base de datos.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "FK_INTERNACION_MEDICO" in mensaje_mayus:
         return (
             "❌ MÉDICO PRINCIPAL NO ENCONTRADO:\n"
-            "Explicación humana: La matrícula médica ingresada no existe en la base de datos. "
-            "Primero debes registrar al médico antes de asignarlo a una internación.\n"
+            "Explicación humana: La matrícula médica ingresada no existe en la base de datos.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "FK_HABITACION_SECTOR" in mensaje_mayus:
         return (
             "❌ SECTOR NO ENCONTRADO:\n"
-            "Explicación humana: El sector seleccionado no existe en la base de datos. "
-            "Por favor crea el sector antes de asociarle una habitación.\n"
+            "Explicación humana: El sector seleccionado no existe en la base de datos.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "FK_CAMA_HABITACION" in mensaje_mayus:
         return (
-            "❌ HABITACIÓN NO ENCONTRADA PARA ESTA CAMA:\n"
-            "Explicación humana: El ID de habitación ingresado no existe en el hospital. "
-            "Verifica el ID en la lista de habitaciones existentes.\n"
+            "❌ HABITACIÓN NO ENCONTRADA:\n"
+            "Explicación humana: El ID de habitación ingresado no existe en el hospital.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
 
-    # campos obligatorios faltantes (NOT NULL)
-    if codigo_oracle == 1400:
-        columna_afectada = ""
-        if '"NOMBRE"' in mensaje_mayus:
-            columna_afectada = "el NOMBRE"
-        elif '"APELLIDO"' in mensaje_mayus:
-            columna_afectada = "el APELLIDO"
-        elif '"CUIL"' in mensaje_mayus:
-            columna_afectada = "el CUIL"
-        elif '"FECHA"' in mensaje_mayus or '"FECHA_DE_NACIMIENTO"' in mensaje_mayus:
-            columna_afectada = "la FECHA"
-        elif '"PISO"' in mensaje_mayus:
-            columna_afectada = "el PISO"
-        else:
-            columna_afectada = "uno de los campos obligatorios"
-
-        return (
-            f"❌ CAMPO REQUERIDO VACÍO (Restricción NOT NULL):\n"
-            f"Explicación humana: Intentaste guardar un registro dejando en blanco {columna_afectada}. "
-            "Por favor completa todos los campos del formulario.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-
-    #codigos especificos explicados
+    # --------------------------------------------------------------------------
+    # 6. ERRORES GENERALES
+    # --------------------------------------------------------------------------
     traducciones_generales = {
-        1: (
-            "DATO DUPLICADO (Clave Única o Primaria)",
-            "Ya existe un registro con ese identificador único (DNI, Matrícula, CUIL, etc.) en la base de datos."
-        ),
-        2291: (
-            "DATO RELACIONADO NO ENCONTRADO (Foreign Key)",
-            "Estás intentando asociar un dato a otra tabla que no existe previamente (ej: Paciente, Médico, Habitación o Sector no cargado)."
-        ),
-        2292: (
-            "NO SE PUEDE ELIMINAR (Registros dependientes)",
-            "No puedes borrar este registro porque tiene otros datos asociados en otras tablas del hospital."
-        ),
-        2290: (
-            "REGLA DE VALIDACIÓN NO CUMPLIDA (Violación de CHECK)",
-            "Uno de los valores ingresados no cumple con las restricciones permitidas por la base de datos."
-        ),
-        1400: (
-            "CAMPO OBLIGATORIO VACÍO (NOT NULL)",
-            "Intentaste guardar dejando en blanco un campo que es requerido obligatoriamente."
-        ),
-        942: (
-            "TABLA NO ENCONTRADA",
-            "La tabla especificada no existe en Oracle. Haz clic en 'Crear/Reiniciar Tablas' para inicializar la base de datos."
-        ),
-        904: (
-            "COLUMNA NO VÁLIDA",
-            "Escribiste un nombre de columna que no existe en la tabla consultada."
-        ),
-        933: (
-            "ERROR DE SINTAXIS SQL",
-            "La consulta SQL está mal redactada o tiene palabras clave fuera de lugar."
-        ),
-        936: (
-            "FALTA UNA EXPRESIÓN EN EL SQL",
-            "Falta especificar un valor, una columna o una condición en tu sentencia SQL."
-        ),
-        1438: (
-            "NÚMERO DEMASIADO GRANDE",
-            "El número ingresado supera los dígitos permitidos para esa columna (ej: un DNI con más de 8 dígitos o cama mayor a 9)."
-        ),
-        1843: (
-            "FORMATO DE FECHA INCORRECTO",
-            "El formato de fecha no es válido. Usa el formato estándar DD/MM/YYYY o YYYY-MM-DD."
-        ),
-        1017: (
-            "ACCESO DENEGADO",
-            "El usuario o contraseña configurado en el archivo .env es incorrecto."
-        ),
-        12541: (
-            "BASE DE DATOS INALCANZABLE (Listener caído)",
-            "El servicio de Oracle no responde en el puerto 1521. Verifica que el servicio de Oracle esté iniciado."
-        ),
-        54: (
-            "RECURSO BLOQUEADO POR OTRA TRANSACCIÓN",
-            "La fila seleccionada está siendo modificada por otra transacción activa en este momento."
-        )
+        1: ("DATO DUPLICADO (Clave Única o Primaria)", "Ya existe un registro con ese identificador en la base de datos."),
+        2291: ("DATO RELACIONADO NO ENCONTRADO (Foreign Key)", "Estás intentando asociar un dato a otra tabla que no existe previamente."),
+        2292: ("NO SE PUEDE ELIMINAR (Registros dependientes)", "No puedes borrar este registro porque otras tablas dependen de él."),
+        2290: ("REGLA DE VALIDACIÓN NO CUMPLIDA (Violación de CHECK)", "Uno de los valores ingresados no cumple con las restricciones permitidas."),
+        1400: ("CAMPO OBLIGATORIO VACÍO (NOT NULL)", "Intentaste guardar dejando en blanco un campo que es requerido obligatoriamente."),
+        942: ("TABLA NO ENCONTRADA", "La tabla especificada no existe en Oracle. Haz clic en 'Crear/Reiniciar Tablas'."),
+        904: ("COLUMNA NO VÁLIDA", "Escribiste un nombre de columna que no existe en la tabla consultada."),
+        933: ("ERROR DE SINTAXIS SQL", "La consulta SQL está mal redactada o tiene palabras clave fuera de lugar."),
+        936: ("FALTA UNA EXPRESIÓN EN EL SQL", "Falta especificar un valor, una columna o una condición en tu sentencia SQL."),
+        1438: ("NÚMERO DEMASIADO GRANDE", "El número ingresado supera los dígitos permitidos para esa columna."),
+        1843: ("FORMATO DE FECHA INCORRECTO", "El formato de fecha no es válido. Usa el formato estándar DD/MM/YYYY o YYYY-MM-DD."),
+        1017: ("ACCESO DENEGADO", "El usuario o contraseña configurado en el archivo .env es incorrecto."),
+        12541: ("BASE DE DATOS INALCANZABLE (Listener caído)", "El servicio de Oracle no responde en el puerto 1521."),
+        54: ("RECURSO BLOQUEADO POR OTRA TRANSACCIÓN", "La fila seleccionada está siendo modificada por otra transacción activa en este momento.")
     }
 
     if codigo_oracle in traducciones_generales:
@@ -276,7 +336,9 @@ def traducir_error_oracle(error, contexto=None):
             f"Explicación: {mensaje_original}"
         )
 
-# CONEXIÓN A LA BASE DE DATOS
+# ==============================================================================
+# CONEXIÓN
+# ==============================================================================
 def obtener_conexion():
     return oracledb.connect(
         user=os.getenv('DB_USER'),
@@ -284,7 +346,9 @@ def obtener_conexion():
         dsn=os.getenv('DSN')
     )
 
-# APLICACIÓN PRINCIPAL (GUI CON TKINTER)
+# ==============================================================================
+# APLICACIÓN PRINCIPAL
+# ==============================================================================
 class HospitalApp(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -292,28 +356,25 @@ class HospitalApp(tk.Tk):
         self.geometry("1180x820")
         self.minsize(980, 650)
 
-        # Configuración de estilos visuales
         self.configurar_estilos()
 
-        # 1. Cabecera superior fija
+        # Cabecera fija
         self.crear_cabecera()
 
-        # 2. Panel divisor móvil (PanedWindow) para permitir agrandar/achicar logs
+        # Panel divisor móvil (PanedWindow) para redimensionar los logs
         self.paned_principal = ttk.PanedWindow(self, orient=tk.VERTICAL)
         self.paned_principal.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 10))
 
-        # Marco superior: Pestañas de la aplicación
         self.frame_superior = ttk.Frame(self.paned_principal)
         self.paned_principal.add(self.frame_superior, weight=4)
 
-        # Marco inferior: Logs móviles (redimensionables arrastrando la barra)
         self.frame_inferior = ttk.Frame(self.paned_principal)
         self.paned_principal.add(self.frame_inferior, weight=1)
 
-        # 3. Construir panel de logs primero (para capturar cualquier evento de inicio)
+        # Panel de logs primero
         self.crear_panel_logs(self.frame_inferior)
 
-        # 4. Construir pestañas dentro del marco superior
+        # Pestañas
         self.crear_pestanas(self.frame_superior)
 
         self.log_info(f"Sistema iniciado correctamente. Conectado a Oracle como usuario: '{os.getenv('DB_USER')}'.")
@@ -336,9 +397,6 @@ class HospitalApp(tk.Tk):
         self.style.configure("SubHeader.TLabel", font=("Segoe UI", 9), foreground="#4A5568", background=self.COLOR_FONDO)
         self.style.configure("Treeview.Heading", font=("Segoe UI", 9, "bold"), background="#E2E8F0")
 
-    # --------------------------------------------------------------------------
-    # CABECERA SUPERIOR
-    # --------------------------------------------------------------------------
     def crear_cabecera(self):
         frame_cabecera = ttk.Frame(self, padding="12 8")
         frame_cabecera.pack(fill=tk.X)
@@ -351,14 +409,29 @@ class HospitalApp(tk.Tk):
 
         lbl_subtitulo = ttk.Label(
             frame_textos, 
-            text="Diseño de Bases de Datos - Universidad Nacional de Mar del Plata", 
+            text="Diseño de Bases de Datos - Universidad Nacional de Mar del Plata | Demostración de Transacciones ACID y Stored Procedures", 
             style="SubHeader.TLabel"
         )
         lbl_subtitulo.pack(anchor="w")
 
+        frame_botones_cab = ttk.Frame(frame_cabecera)
+        frame_botones_cab.pack(side=tk.RIGHT)
+
+        btn_cargar_datos = tk.Button(
+            frame_botones_cab,
+            text="📥 Cargar Datos de Prueba (HOSPITAL.sql)",
+            bg="#2B6CB0",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="groove",
+            cursor="hand2",
+            command=self.accion_cargar_datos_hospital
+        )
+        btn_cargar_datos.pack(side=tk.LEFT, padx=5, pady=5)
+
         btn_init_db = tk.Button(
-            frame_cabecera,
-            text="🛠️ Crear/Reiniciar Tablas",
+            frame_botones_cab,
+            text="🛠️ Crear/Reiniciar Tablas (create-table.sql)",
             bg="#DD6B20",
             fg="white",
             font=("Segoe UI", 9, "bold"),
@@ -366,33 +439,25 @@ class HospitalApp(tk.Tk):
             cursor="hand2",
             command=self.accion_ejecutar_script_tablas
         )
-        btn_init_db.pack(side=tk.RIGHT, padx=5, pady=5)
+        btn_init_db.pack(side=tk.LEFT, padx=5, pady=5)
 
-    def accion_ejecutar_script_tablas(self):
-        archivo = "create-table.sql"
+    def ejecutar_archivo_sql(self, archivo, nombre_descriptivo):
         if not os.path.exists(archivo):
             self.log_error(f"No se encontró el archivo '{archivo}' en la carpeta del proyecto.")
             messagebox.showerror("Archivo no encontrado", f"No se encontró '{archivo}'.")
             return
 
-        respuesta = messagebox.askyesno(
-            "Confirmar Inicialización", 
-            "¿Deseas ejecutar 'create-table.sql'?\nEsto borrará (DROP) y volverá a crear todas las tablas en Oracle."
-        )
-        if not respuesta:
-            return
-
         conn = None
         cursor = None
         try:
-            self.log_info(f"Ejecutando script de tablas '{archivo}' en Oracle...")
+            self.log_info(f"Procesando '{archivo}' ({nombre_descriptivo}) en Oracle...")
             conn = obtener_conexion()
             cursor = conn.cursor()
 
             with open(archivo, "r", encoding="utf-8") as f:
                 contenido = f.read()
 
-            sentencias = contenido.split(";")
+            sentencias = parsear_script_sql(contenido)
             errores = 0
             exitos = 0
 
@@ -404,26 +469,42 @@ class HospitalApp(tk.Tk):
                         exitos += 1
                     except oracledb.DatabaseError as e:
                         error_obj, = e.args
-                        if error_obj.code == 942:  # ORA-00942: tabla no existe en el DROP
+                        if error_obj.code == 942:  # ORA-00942: tabla no existe en DROP
                             pass
                         else:
                             errores += 1
-                            self.log_error(f"Error en sentencia: {sql[:35]}... -> {traducir_error_oracle(e)}")
+                            self.log_error(f"Sentencia con aviso [{error_obj.code}]: {sql[:40]}... -> {traducir_error_oracle(e)}")
 
             conn.commit()
-            msg = f"Script finalizado. Sentencias exitosas: {exitos} (Sentencias con error no crítico: {errores})."
+            msg = f"{nombre_descriptivo} finalizado.\n• Exitosas: {exitos}\n• Avisos no críticos: {errores}"
             self.log_exito(msg)
-            messagebox.showinfo("Tablas Inicializadas", msg)
+            messagebox.showinfo("Operación Finalizada", msg)
             self.cargar_camas_libres()
 
         except Exception as e:
-            self.log_error(f"Error crítico al ejecutar script de tablas:\n{traducir_error_oracle(e)}")
+            self.log_error(f"Error crítico al procesar '{archivo}':\n{traducir_error_oracle(e)}")
             messagebox.showerror("Error", traducir_error_oracle(e))
         finally:
             if cursor:
                 cursor.close()
             if conn:
                 conn.close()
+
+    def accion_ejecutar_script_tablas(self):
+        respuesta = messagebox.askyesno(
+            "Confirmar Inicialización", 
+            "¿Deseas ejecutar 'create-table.sql'?\nEsto borrará (DROP) y volverá a crear todas las tablas, triggers y stored procedures en Oracle."
+        )
+        if respuesta:
+            self.ejecutar_archivo_sql("create-table.sql", "Creación de Esquema y Triggers")
+
+    def accion_cargar_datos_hospital(self):
+        respuesta = messagebox.askyesno(
+            "Cargar Datos de Prueba", 
+            "¿Deseas ejecutar 'HOSPITAL.sql'?\nEsto insertará los datos de prueba oficiales (personas, pacientes, médicos, camas, internaciones y guardias)."
+        )
+        if respuesta:
+            self.ejecutar_archivo_sql("HOSPITAL.sql", "Carga de Datos de Prueba (HOSPITAL.sql)")
 
     # --------------------------------------------------------------------------
     # PESTAÑAS PRINCIPALES
@@ -432,23 +513,23 @@ class HospitalApp(tk.Tk):
         self.notebook = ttk.Notebook(contenedor)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
-        # Tab 1: Operación Transaccional
+        # Tab 1: Internación y Consultas Stored Procedures
         self.tab_transaccion = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(self.tab_transaccion, text=" 🔄 Internación")
+        self.notebook.add(self.tab_transaccion, text=" 🔄 Internación (Transacción y Stored Procedures) ")
         self.construir_tab_transaccion()
 
-        # Tab 2: Altas de Datos (Pacientes, Médicos, Habitaciones, Camas)
+        # Tab 2: Altas de Datos
         self.tab_altas = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.tab_altas, text=" ➕ Carga de Datos (Pacientes, Médicos, Camas) ")
         self.construir_tab_altas()
 
-        # Tab 3: Consola SQL para el Parcial
+        # Tab 3: Consola SQL
         self.tab_sql = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(self.tab_sql, text=" 💻 Consola SQL en Vivo")
+        self.notebook.add(self.tab_sql, text=" 💻 Consola SQL en Vivo (Para el Parcial) ")
         self.construir_tab_sql()
 
     # ==========================================================================
-    # TAB 1: OPERACIÓN TRANSACCIONAL DE INTERNACIÓN
+    # TAB 1: OPERACIÓN TRANSACCIONAL Y CONSULTAS DE STORED PROCEDURES
     # ==========================================================================
     def construir_tab_transaccion(self):
         frame_izq = ttk.LabelFrame(self.tab_transaccion, text=" Registrar Internación con Cama ", padding=12)
@@ -472,23 +553,41 @@ class HospitalApp(tk.Tk):
 
         btn_ejecutar = tk.Button(
             frame_izq, 
-            text="Ejecutar Transacción", 
+            text="⚡ Ejecutar Transacción (COMMIT / ROLLBACK)", 
             bg="#2B6CB0", 
             fg="white", 
             font=("Segoe UI", 10, "bold"),
-            relief="groove",
+            relief="groove", 
             cursor="hand2",
             command=self.accion_registrar_internacion
         )
         btn_ejecutar.grid(row=4, column=0, columnspan=2, pady=12, sticky="ew")
 
-        
+        # Botón para probar Stored Procedure de comentarios
+        frame_sp_comentarios = ttk.LabelFrame(frame_izq, text=" Consultar Comentarios (Stored Procedure) ", padding=8)
+        frame_sp_comentarios.grid(row=5, column=0, columnspan=2, pady=(10, 4), sticky="ew")
+
+        ttk.Label(frame_sp_comentarios, text="ID Internación:").grid(row=0, column=0, sticky="w", pady=2)
+        self.txt_id_int_comentario = ttk.Entry(frame_sp_comentarios, width=12)
+        self.txt_id_int_comentario.insert(0, "1")
+        self.txt_id_int_comentario.grid(row=0, column=1, pady=2, sticky="w")
+
+        btn_ver_sp_comentarios = tk.Button(
+            frame_sp_comentarios,
+            text="💬 Ver Visitas Médicas (SP)",
+            bg="#E2E8F0",
+            cursor="hand2",
+            font=("Segoe UI", 9, "bold"),
+            command=self.accion_consultar_comentarios_sp
+        )
+        btn_ver_sp_comentarios.grid(row=1, column=0, columnspan=2, pady=4, sticky="ew")
+
         # Panel derecho: Camas libres (Resumen por Sector + Detalle)
         frame_der = ttk.Frame(self.tab_transaccion)
         frame_der.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        # 1. Resumen: Cantidad de camas libres por sector (Requerimiento del TP)
-        frame_resumen = ttk.LabelFrame(frame_der, text=" 📊 Cantidad de Camas Disponibles por Sector ", padding=6)
+        # 1. Resumen: Cantidad de camas libres por sector (Requerimiento SP)
+        frame_resumen = ttk.LabelFrame(frame_der, text=" 📊 Cantidad de Camas Disponibles por Sector (Stored Procedure) ", padding=6)
         frame_resumen.pack(fill=tk.X, pady=(0, 6))
 
         self.tabla_resumen_camas = ttk.Treeview(frame_resumen, columns=("Sector", "CamasLibres"), show="headings", height=4)
@@ -516,7 +615,7 @@ class HospitalApp(tk.Tk):
         self.tabla_camas.pack(fill=tk.BOTH, expand=True, pady=(2, 4))
 
         btn_refrescar_camas = tk.Button(
-            frame_der, text="🔄 Actualizar Camas y Resumen", bg="#E2E8F0", cursor="hand2", command=self.cargar_camas_libres
+            frame_der, text="🔄 Actualizar Camas y Resumen (Invocar SP)", bg="#E2E8F0", cursor="hand2", command=self.cargar_camas_libres
         )
         btn_refrescar_camas.pack(anchor="w", pady=(0, 2))
 
@@ -541,8 +640,7 @@ class HospitalApp(tk.Tk):
         conn = None
         cursor = None
         try:
-            #USO DE TRANSACCIONES: INTERNACION 
-            self.log_info(f"Iniciando transacción: Asignando Paciente DNI={dni} a Hab={hab}, Cama={cama}...")
+            self.log_info(f"Iniciando transacción: Asignando Paciente DNI={dni} a Hab={hab}, Cama={cama} con Médico={matricula}...")
             conn = obtener_conexion()
             cursor = conn.cursor()
 
@@ -557,8 +655,14 @@ class HospitalApp(tk.Tk):
             fila_cama = cursor.fetchone()
             if not fila_cama:
                 raise Exception(f"La cama {cama} de la habitación {hab} no existe en la base de datos.")
-            if fila_cama[0] != 'Libre':
+            if fila_cama[0].upper() != 'LIBRE':
                 raise Exception(f"La cama {cama} de la habitación {hab} no está disponible (Estado actual: '{fila_cama[0]}').")
+
+            # 1.5. Validar regla médica de autoatención
+            cursor.execute("SELECT numero_de_DNI FROM MEDICO WHERE numero_de_matricula = :1", [matricula])
+            fila_med = cursor.fetchone()
+            if fila_med and str(fila_med[0]).strip() == str(dni).strip():
+                raise Exception("Regla médica de negocio: Un médico no puede ser el profesional a cargo de su propia internación (el DNI del paciente coincide con el DNI del médico).")
 
             # 2. Inserción de la Internación
             id_internacion_var = cursor.var(oracledb.NUMBER)
@@ -570,20 +674,21 @@ class HospitalApp(tk.Tk):
             
             id_internacion = int(id_internacion_var.getvalue()[0])
 
-            # 3. Ocupar la cama
+            # 3. Ocupar la cama (respetando si la tabla usa 'OCUPADA' u 'Ocupada')
+            estado_ocupado = "OCUPADA" if fila_cama[0].isupper() else "Ocupada"
             cursor.execute("""
                 UPDATE CAMA 
-                SET estado = 'Ocupada' 
-                WHERE id_habitacion = :1 AND nro_cama = :2
-            """, [hab, cama])
+                SET estado = :1 
+                WHERE id_habitacion = :2 AND nro_cama = :3
+            """, [estado_ocupado, hab, cama])
 
-            # 4. Insertar en POSEE
+            # 4. Insertar en POSEE (historial con timestamp)
             cursor.execute("""
                 INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
                 VALUES (:1, :2, :3, SYSTIMESTAMP)
             """, [id_internacion, hab, cama])
 
-            # Confirmar transacción
+            # Confirmar transacción completa
             conn.commit()
             mensaje_exito = f"Transacción confirmada (COMMIT): Internación #{id_internacion} creada con éxito. Cama {cama} de Hab {hab} quedó OCUPADA."
             self.log_exito(mensaje_exito)
@@ -621,33 +726,56 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            # 1. Consulta agrupada: Cantidad de camas disponibles por sector
-            cursor.execute("""
-                SELECT s.nombre AS sector, COUNT(c.nro_cama) AS disponibles
-                FROM SECTOR s
-                LEFT JOIN HABITACION h ON s.id_sector = h.id_sector
-                LEFT JOIN CAMA c ON h.id_habitacion = c.id_habitacion AND c.estado = 'Libre'
-                GROUP BY s.nombre
-                ORDER BY s.nombre
-            """)
-            filas_resumen = cursor.fetchall()
-            if hasattr(self, 'tabla_resumen_camas'):
-                for r in filas_resumen:
-                    self.tabla_resumen_camas.insert("", tk.END, values=(r[0], f"{r[1]} libre(s)"))
+            # Intentar invocar el Stored Procedure listar_camas_disponibles
+            usar_sp = False
+            try:
+                cur_res = cursor.connection.cursor()
+                cur_det = cursor.connection.cursor()
+                cursor.callproc("listar_camas_disponibles", [cur_res, cur_det])
+                
+                filas_resumen = cur_res.fetchall()
+                if hasattr(self, 'tabla_resumen_camas'):
+                    for r in filas_resumen:
+                        nom = r[1] if len(r) >= 2 else str(r[0])
+                        cant = r[2] if len(r) >= 3 else r[1]
+                        self.tabla_resumen_camas.insert("", tk.END, values=(nom, f"{cant} libre(s)"))
 
-            # 2. Consulta detallada: Cama por cama
-            cursor.execute("""
-                SELECT s.nombre AS sector, h.id_habitacion, h.piso, c.nro_cama, c.estado
-                FROM CAMA c
-                JOIN HABITACION h ON c.id_habitacion = h.id_habitacion
-                JOIN SECTOR s ON h.id_sector = s.id_sector
-                WHERE c.estado = 'Libre'
-                ORDER BY s.nombre, h.id_habitacion, c.nro_cama
-            """)
-            filas_detalle = cursor.fetchall()
-            if hasattr(self, 'tabla_camas'):
-                for f in filas_detalle:
-                    self.tabla_camas.insert("", tk.END, values=(f[0], f[1], f[2], f[3], f[4]))
+                filas_detalle = cur_det.fetchall()
+                if hasattr(self, 'tabla_camas'):
+                    for f in filas_detalle:
+                        self.tabla_camas.insert("", tk.END, values=(f[0], f[1], "-", f[2], "Libre"))
+
+                cur_res.close()
+                cur_det.close()
+                usar_sp = True
+            except Exception:
+                usar_sp = False
+
+            # Si el SP no está compilado, usar consulta directa con soporte mayúsculas/minúsculas
+            if not usar_sp:
+                cursor.execute("""
+                    SELECT s.nombre AS sector, COUNT(c.nro_cama) AS disponibles
+                    FROM SECTOR s
+                    LEFT JOIN HABITACION h ON s.id_sector = h.id_sector
+                    LEFT JOIN CAMA c ON h.id_habitacion = c.id_habitacion AND UPPER(c.estado) = 'LIBRE'
+                    GROUP BY s.nombre
+                    ORDER BY s.nombre
+                """)
+                for r in cursor.fetchall():
+                    if hasattr(self, 'tabla_resumen_camas'):
+                        self.tabla_resumen_camas.insert("", tk.END, values=(r[0], f"{r[1]} libre(s)"))
+
+                cursor.execute("""
+                    SELECT s.nombre AS sector, h.id_habitacion, h.piso, c.nro_cama, c.estado
+                    FROM CAMA c
+                    JOIN HABITACION h ON c.id_habitacion = h.id_habitacion
+                    JOIN SECTOR s ON h.id_sector = s.id_sector
+                    WHERE UPPER(c.estado) = 'LIBRE'
+                    ORDER BY s.nombre, h.id_habitacion, c.nro_cama
+                """)
+                for f in cursor.fetchall():
+                    if hasattr(self, 'tabla_camas'):
+                        self.tabla_camas.insert("", tk.END, values=(f[0], f[1], f[2], f[3], f[4]))
 
             cursor.close()
         except Exception as e:
@@ -659,34 +787,84 @@ class HospitalApp(tk.Tk):
             if conn:
                 conn.close()
 
+    def accion_consultar_comentarios_sp(self):
+        id_int_str = self.txt_id_int_comentario.get().strip()
+        if not id_int_str:
+            messagebox.showwarning("Atención", "Ingresa el ID de internación a consultar.")
+            return
+
+        try:
+            id_int = int(id_int_str)
+        except ValueError:
+            messagebox.showerror("Error", "El ID de internación debe ser un número entero.")
+            return
+
+        conn = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+
+            cur_pac = cursor.connection.cursor()
+            cur_com = cursor.connection.cursor()
+            cursor.callproc("listar_comentarios_internacion", [id_int, cur_pac, cur_com])
+
+            paciente_info = cur_pac.fetchall()
+            comentarios = cur_com.fetchall()
+
+            cur_pac.close()
+            cur_com.close()
+
+            if not paciente_info:
+                messagebox.showinfo("Sin Datos", f"No se encontró la internación #{id_int} en el sistema.")
+                return
+
+            pac = paciente_info[0]
+            texto_resultado = f"📋 REPORTE DE INTERNACIÓN #{pac[0]}\n"
+            texto_resultado += f"• Paciente: {pac[1]} (DNI: {pac[2]})\n"
+            texto_resultado += "=" * 55 + "\n\n"
+
+            if not comentarios:
+                texto_resultado += "No se registran comentarios médicos de recorridos para esta internación."
+            else:
+                texto_resultado += f"VISITAS MÉDICAS REGISTRADAS ({len(comentarios)}):\n\n"
+                for c in comentarios:
+                    texto_resultado += f"📅 Fecha: {c[0]} | Médico: {c[1]} (Mat: {c[2]})\n"
+                    texto_resultado += f"💬 Comentario: \"{c[3]}\"\n"
+                    texto_resultado += "-" * 55 + "\n"
+
+            self.log_exito(f"Stored Procedure 'listar_comentarios_internacion' ejecutado con éxito para Internación #{id_int}.")
+            messagebox.showinfo(f"Comentarios de Internación #{id_int}", texto_resultado)
+
+        except Exception as e:
+            self.log_error(f"Error al ejecutar Stored Procedure de comentarios:\n{traducir_error_oracle(e)}")
+            messagebox.showerror("Error Stored Procedure", traducir_error_oracle(e))
+        finally:
+            if conn:
+                conn.close()
+
     # ==========================================================================
-    # TAB 2: SECCIONES DE ALTAS (PACIENTES, MÉDICOS, HABITACIONES, CAMAS)
+    # TAB 2: SECCIONES DE ALTAS (PACIENTES, MÉDICOS, SECTORES, HABITACIONES, CAMAS)
     # ==========================================================================
     def construir_tab_altas(self):
         notebook_altas = ttk.Notebook(self.tab_altas)
         notebook_altas.pack(fill=tk.BOTH, expand=True)
 
-        # Sub-pestaña 1: Paciente
         tab_pac = ttk.Frame(notebook_altas, padding=12)
         notebook_altas.add(tab_pac, text=" 👤 Pacientes ")
         self.construir_subtab_paciente(tab_pac)
 
-        # Sub-pestaña 2: Médico
         tab_med = ttk.Frame(notebook_altas, padding=12)
         notebook_altas.add(tab_med, text=" 🩺 Médicos ")
         self.construir_subtab_medico(tab_med)
 
-        # Sub-pestaña 3: Sector
         tab_sec = ttk.Frame(notebook_altas, padding=12)
         notebook_altas.add(tab_sec, text=" 🏢 Sectores ")
         self.construir_subtab_sector(tab_sec)
 
-        # Sub-pestaña 4: Habitación
         tab_hab = ttk.Frame(notebook_altas, padding=12)
         notebook_altas.add(tab_hab, text=" 🚪 Habitaciones ")
         self.construir_subtab_habitacion(tab_hab)
 
-        # Sub-pestaña 5: Cama
         tab_cama = ttk.Frame(notebook_altas, padding=12)
         notebook_altas.add(tab_cama, text=" 🛏️ Camas ")
         self.construir_subtab_cama(tab_cama)
@@ -724,7 +902,6 @@ class HospitalApp(tk.Tk):
         )
         btn_guardar.grid(row=5, column=0, columnspan=2, pady=12, sticky="ew")
 
-        # Lista de pacientes
         frame_lista = ttk.LabelFrame(parent, text=" Pacientes Registrados ", padding=10)
         frame_lista.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
@@ -760,13 +937,13 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            # 1. Insert en PERSONA (rol PACIENTE)
+            # 1. Insert en PERSONA
             cursor.execute("""
                 INSERT INTO PERSONA (numero_de_DNI, nombre, apellido, rol)
                 VALUES (:1, :2, :3, 'PACIENTE')
             """, [dni, nom, ape])
 
-            # 2. Insert en PACIENTE (sin hora, solo fecha)
+            # 2. Insert en PACIENTE
             cursor.execute(f"""
                 INSERT INTO PACIENTE (numero_de_DNI, sexo, fecha_de_nacimiento)
                 VALUES (:1, :2, TO_DATE(:3, '{fmt}'))
@@ -924,7 +1101,6 @@ class HospitalApp(tk.Tk):
             lob = res[0]
             foto_data = lob.read() if hasattr(lob, 'read') else lob
 
-            # Guardar en archivo temporal y abrir en Windows
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
             temp_file.write(foto_data)
             temp_file.close()
@@ -963,21 +1139,20 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            # 1. Verificar o insertar PERSONA
+            # 1. Verificar o insertar PERSONA (rol NULL para no chocar con el trigger de guardias)
             cursor.execute("SELECT numero_de_DNI FROM PERSONA WHERE numero_de_DNI = :1", [dni])
             if not cursor.fetchone():
                 cursor.execute("""
                     INSERT INTO PERSONA (numero_de_DNI, nombre, apellido, rol)
-                    VALUES (:1, :2, :3, 'PACIENTE')
+                    VALUES (:1, :2, :3, NULL)
                 """, [dni, nom, ape])
 
-            # Leer bytes de la foto si fue seleccionada (tipo BLOB en Oracle)
             foto_bytes = None
             if self.med_ruta_foto and os.path.exists(self.med_ruta_foto):
                 with open(self.med_ruta_foto, "rb") as f:
                     foto_bytes = f.read()
 
-            # 2. Insertar en MEDICO (con foto BLOB)
+            # 2. Insertar en MEDICO con foto BLOB
             cursor.execute("""
                 INSERT INTO MEDICO (numero_de_matricula, CUIL, foto, guardias_max, fecha_ingreso, numero_de_DNI)
                 VALUES (:1, :2, :3, :4, SYSDATE, :5)
@@ -1030,9 +1205,7 @@ class HospitalApp(tk.Tk):
             if conn:
                 conn.close()
 
-    # --------------------------------------------------------------------------
-    # SUBTAB SECTOR
-    # --------------------------------------------------------------------------
+    # 3. Subtab Sector
     def construir_subtab_sector(self, parent):
         frame_form = ttk.LabelFrame(parent, text=" Crear Nuevo Sector ", padding=10)
         frame_form.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
@@ -1132,7 +1305,6 @@ class HospitalApp(tk.Tk):
             cursor.execute("SELECT id_sector, nombre FROM SECTOR ORDER BY id_sector")
             sectores = cursor.fetchall()
 
-            # 1. Actualizar el combobox desplegable de la pestaña Habitación
             valores_sectores = [f"{s[0]} - {s[1]}" for s in sectores]
             if hasattr(self, 'hab_sector_cb'):
                 sel_actual = self.hab_sector_cb.get()
@@ -1142,7 +1314,6 @@ class HospitalApp(tk.Tk):
                 elif valores_sectores:
                     self.hab_sector_cb.current(0)
 
-            # 2. Actualizar la tabla de sectores si está inicializada
             if hasattr(self, 'tabla_sectores'):
                 for item in self.tabla_sectores.get_children():
                     self.tabla_sectores.delete(item)
@@ -1173,7 +1344,7 @@ class HospitalApp(tk.Tk):
         self.hab_piso.grid(row=0, column=1, pady=3)
 
         ttk.Label(frame_form, text="Orientación:").grid(row=1, column=0, sticky="w", pady=3)
-        self.hab_orientacion = ttk.Combobox(frame_form, values=["Norte", "Sur", "Este", "Oeste"], state="readonly", width=18)
+        self.hab_orientacion = ttk.Combobox(frame_form, values=["Norte", "Sur", "Este", "Oeste", "NORTE", "SUR", "ESTE", "OESTE"], state="readonly", width=18)
         self.hab_orientacion.set("Norte")
         self.hab_orientacion.grid(row=1, column=1, pady=3)
 
@@ -1188,7 +1359,7 @@ class HospitalApp(tk.Tk):
         )
         btn_crear_sec_rapido.pack(side=tk.LEFT)
 
-        # Marco para la asignación de rondas de los 7 días de la semana
+        # Asignar Rondas para los 7 días
         frame_rondas = ttk.LabelFrame(frame_form, text=" Asignar Rondas (Turnos 1 a 4) para los 7 días ", padding=6)
         frame_rondas.grid(row=3, column=0, columnspan=2, pady=8, sticky="ew")
 
@@ -1300,16 +1471,9 @@ class HospitalApp(tk.Tk):
         conn = None
         cursor = None
         try:
-            self.log_info(f"Iniciando creación de Habitación (Piso {piso}, {ori}) y asignación de rondas para los 7 días...")
+            self.log_info(f"Iniciando creación de Habitación (Piso {piso}, {ori}) y asignación de rondas...")
             conn = obtener_conexion()
             cursor = conn.cursor()
-
-            # Asegurar que el CHECK constraint en RONDA permita turnos 1, 2, 3, 4
-            try:
-                cursor.execute("ALTER TABLE RONDA DROP CONSTRAINT chk_ronda_turno")
-                cursor.execute("ALTER TABLE RONDA ADD CONSTRAINT chk_ronda_turno CHECK (turno IN ('1', '2', '3', '4', 'MAÑANA', 'TARDE', 'NOCHE'))")
-            except Exception:
-                pass
 
             # 1. Insertar Habitación y obtener su ID
             id_hab_var = cursor.var(oracledb.NUMBER)
@@ -1320,13 +1484,12 @@ class HospitalApp(tk.Tk):
             """, [piso, ori, id_sector, id_hab_var])
             nueva_hab = int(id_hab_var.getvalue()[0])
 
-            # 2. Asignar la ronda de cada uno de los 7 días (en COMPUESTA_POR)
+            # 2. Asignar la ronda de cada uno de los 7 días
             rondas_asignadas = []
             for dia_cod, _ in self.dias_semana:
-                turno_seleccionado = self.cb_turnos_dias[dia_cod].get()  # ej: "Turno 1"
-                nro_turno = turno_seleccionado.replace("Turno", "").strip() # ej: "1"
+                turno_sel = self.cb_turnos_dias[dia_cod].get()
+                nro_turno = turno_sel.replace("Turno", "").strip()
 
-                # Buscar si ya existe una RONDA para ese día y turno
                 cursor.execute("""
                     SELECT id_ronda FROM RONDA 
                     WHERE dia_semana = :1 AND turno = :2
@@ -1336,7 +1499,6 @@ class HospitalApp(tk.Tk):
                 if fila_ronda:
                     id_ronda = fila_ronda[0]
                 else:
-                    # Si no existe, crear la ronda
                     id_ronda_var = cursor.var(oracledb.NUMBER)
                     cursor.execute("""
                         INSERT INTO RONDA (dia_semana, turno)
@@ -1345,25 +1507,22 @@ class HospitalApp(tk.Tk):
                     """, [dia_cod, nro_turno, id_ronda_var])
                     id_ronda = int(id_ronda_var.getvalue()[0])
 
-                # Asociar la habitación a la ronda en COMPUESTA_POR
                 cursor.execute("""
                     INSERT INTO COMPUESTA_POR (id_ronda, id_habitacion)
                     VALUES (:1, :2)
                 """, [id_ronda, nueva_hab])
                 rondas_asignadas.append(f"{dia_cod}: Turno {nro_turno}")
 
-            # Confirmar transacción atómica completa
             conn.commit()
             msg_exito = f"Habitación #{nueva_hab} creada y asociada a las rondas de los 7 días con éxito (COMMIT)."
             self.log_exito(msg_exito)
-            self.log_info(f"Rondas asignadas a Habitación #{nueva_hab}: {', '.join(rondas_asignadas)}")
             messagebox.showinfo("Éxito", msg_exito)
             self.cargar_lista_habitaciones()
 
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al crear habitación y rondas (ROLLBACK ejecutado):\n{traducir_error_oracle(e)}")
+            self.log_error(f"Error al crear habitación y rondas:\n{traducir_error_oracle(e)}")
             messagebox.showerror("Error en Creación", traducir_error_oracle(e))
         finally:
             if cursor:
@@ -1372,7 +1531,6 @@ class HospitalApp(tk.Tk):
                 conn.close()
 
     def cargar_lista_habitaciones(self):
-        # Actualizar siempre el combobox de sectores con lo que exista en la BD
         self.actualizar_todos_los_sectores()
 
         for item in self.tabla_habitaciones.get_children():
@@ -1382,7 +1540,6 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            # Cargar habitaciones junto con la cantidad de rondas asignadas
             cursor.execute("""
                 SELECT h.id_habitacion, h.piso, h.orientacion, s.nombre,
                        (SELECT COUNT(*) FROM COMPUESTA_POR cp WHERE cp.id_habitacion = h.id_habitacion) AS cant_rondas
@@ -1415,7 +1572,7 @@ class HospitalApp(tk.Tk):
         self.cama_nro.grid(row=1, column=1, pady=4)
 
         ttk.Label(frame_form, text="Estado:").grid(row=2, column=0, sticky="w", pady=4)
-        self.cama_estado = ttk.Combobox(frame_form, values=["Libre", "Ocupada"], state="readonly", width=20)
+        self.cama_estado = ttk.Combobox(frame_form, values=["Libre", "Ocupada", "LIBRE", "OCUPADA"], state="readonly", width=20)
         self.cama_estado.set("Libre")
         self.cama_estado.grid(row=2, column=1, pady=4)
 
@@ -1507,7 +1664,7 @@ class HospitalApp(tk.Tk):
                 conn.close()
 
     # ==========================================================================
-    # TAB 3: CONSOLA SQL 
+    # TAB 3: CONSOLA SQL PARA EL PARCIAL
     # ==========================================================================
     def construir_tab_sql(self):
         frame_editor = ttk.LabelFrame(self.tab_sql, text=" Editor de Consultas SQL en Vivo ", padding=10)
@@ -1544,13 +1701,14 @@ class HospitalApp(tk.Tk):
         ttk.Label(frame_botones_sql, text="Consultas rápidas:").pack(side=tk.LEFT, padx=(5, 3))
 
         consultas_rapidas = [
-            ("Ver Pacientes", "SELECT * FROM PACIENTE;"),
-            ("Ver Médicos", "SELECT * FROM MEDICO;"),
-            ("Camas por Sector", "SELECT s.nombre AS sector, COUNT(c.nro_cama) AS camas_libres FROM SECTOR s LEFT JOIN HABITACION h ON s.id_sector = h.id_sector LEFT JOIN CAMA c ON h.id_habitacion = c.id_habitacion AND c.estado = 'Libre' GROUP BY s.nombre ORDER BY camas_libres DESC;"),
-            ("Ver Camas Libres", "SELECT s.nombre, h.id_habitacion, h.piso, c.nro_cama FROM CAMA c JOIN HABITACION h ON c.id_habitacion = h.id_habitacion JOIN SECTOR s ON h.id_sector = s.id_sector WHERE c.estado = 'Libre';"),
-            ("Ver Habitaciones", "SELECT * FROM HABITACION;"),
-            ("Ver Internaciones", "SELECT * FROM INTERNACION ORDER BY id_internacion DESC;"),
-            ("Ver Historial POSEE", "SELECT * FROM POSEE ORDER BY fechaHora DESC;")
+            ("Pacientes", "SELECT * FROM PACIENTE;"),
+            ("Médicos", "SELECT * FROM MEDICO;"),
+            ("Camas por Sector", "SELECT s.nombre AS sector, COUNT(c.nro_cama) AS camas_libres FROM SECTOR s LEFT JOIN HABITACION h ON s.id_sector = h.id_sector LEFT JOIN CAMA c ON h.id_habitacion = c.id_habitacion AND UPPER(c.estado) = 'LIBRE' GROUP BY s.nombre ORDER BY camas_libres DESC;"),
+            ("Camas Libres", "SELECT s.nombre, h.id_habitacion, h.piso, c.nro_cama FROM CAMA c JOIN HABITACION h ON c.id_habitacion = h.id_habitacion JOIN SECTOR s ON h.id_sector = s.id_sector WHERE UPPER(c.estado) = 'LIBRE';"),
+            ("Auditoría Guardias", "SELECT * FROM AUDITORIA_GUARDIAS ORDER BY fecha_operacion DESC;"),
+            ("Comentarios Recorridos", "SELECT * FROM COMENTARIO;"),
+            ("Internaciones", "SELECT * FROM INTERNACION ORDER BY id_internacion DESC;"),
+            ("Historial POSEE", "SELECT * FROM POSEE ORDER BY fechaHora DESC;")
         ]
 
         for texto, sql in consultas_rapidas:
@@ -1604,7 +1762,6 @@ class HospitalApp(tk.Tk):
             self.tabla_sql.delete(*self.tabla_sql.get_children())
 
             if cursor.description:
-                # Quitar guiones bajos de los títulos de columna
                 columnas_ids = [f"c{i}" for i in range(len(cursor.description))]
                 self.tabla_sql["columns"] = columnas_ids
                 for i, col in enumerate(cursor.description):
@@ -1623,7 +1780,6 @@ class HospitalApp(tk.Tk):
                         elif hasattr(v, 'read'):
                             texto = "[Foto BLOB]"
                         elif isinstance(v, (datetime, date)):
-                            # Si es fecha (como nacimiento) o no tiene hora, mostrar solo la fecha sin hora
                             if hasattr(v, 'hour') and (v.hour != 0 or v.minute != 0 or v.second != 0):
                                 texto = v.strftime("%d/%m/%Y %H:%M:%S")
                             else:
@@ -1634,7 +1790,7 @@ class HospitalApp(tk.Tk):
                     self.tabla_sql.insert("", tk.END, values=valores)
 
                 self.lbl_filas_resultado.config(text=f"✅ {len(filas)} fila(s) retornada(s).")
-                self.log_exito(f"Consulta SQL ejecutada: '{sql[:45]}...' -> {len(filas)} filas retornadas.")
+                self.log_exito(f"Consulta SQL ejecutada: '{sql[:45]}...' -> {len(filas)} filas.")
             else:
                 conn.commit()
                 afectadas = cursor.rowcount
@@ -1657,10 +1813,10 @@ class HospitalApp(tk.Tk):
                 conn.close()
 
     # ==========================================================================
-    # PANEL INFERIOR MÓVIL (PANEDWINDOW) Y LOGS SIMULTÁNEOS CONSOLA + UI
+    # PANEL INFERIOR MÓVIL
     # ==========================================================================
     def crear_panel_logs(self, contenedor):
-        frame_logs = ttk.LabelFrame(contenedor, text=" 📋 Registro de Eventos y Errores ", padding=6)
+        frame_logs = ttk.LabelFrame(contenedor, text=" 📋 Registro de Eventos y Errores (Redimensionable - Arrastra hacia arriba/abajo) ", padding=6)
         frame_logs.pack(fill=tk.BOTH, expand=True)
 
         self.txt_logs = scrolledtext.ScrolledText(
@@ -1679,11 +1835,7 @@ class HospitalApp(tk.Tk):
     def _agregar_log(self, texto, tag):
         timestamp = datetime.now().strftime("%H:%M:%S")
         linea_completa = f"[{timestamp}] {texto}"
-
-        # 1. IMPRIMIR SIEMPRE EN LA CONSOLA / TERMINAL
         print(linea_completa)
-
-        # 2. INSERTAR EN EL VISOR VISUAL (SI YA FUE INICIALIZADO)
         if hasattr(self, 'txt_logs'):
             self.txt_logs.insert(tk.END, f"{linea_completa}\n", tag)
             self.txt_logs.see(tk.END)
