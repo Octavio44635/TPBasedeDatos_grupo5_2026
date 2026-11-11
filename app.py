@@ -7,18 +7,50 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog, simpledialog
 from datetime import datetime, date
 
-# Cargar variables de entorno desde el archivo .env
-load_dotenv(override=True)
+# Cargar variables de entorno desde el archivo .env (soporta ejecución desde cualquier directorio)
+DIRECTORIO_APP = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(DIRECTORIO_APP, ".env")
+if os.path.exists(env_path):
+    load_dotenv(env_path, override=True)
+else:
+    load_dotenv(override=True)
 
 # ==============================================================================
 # PARSER ROBUSTO DE SCRIPTS SQL (SOPORTA ';' Y '/' DE PL/SQL)
 # ==============================================================================
+def limpiar_sql_fragmento(texto):
+    """
+    Elimina líneas de comentarios '--' y comentarios inline,
+    retornando la sentencia SQL limpia.
+    """
+    lineas_limpias = []
+    for l in texto.splitlines():
+        l_str = l.strip()
+        if not l_str or l_str.startswith("--"):
+            continue
+        en_comilla = False
+        idx_comentario = -1
+        for i in range(len(l)):
+            if l[i] == "'":
+                en_comilla = not en_comilla
+            elif not en_comilla and l[i:i+2] == "--":
+                idx_comentario = i
+                break
+        if idx_comentario != -1:
+            l = l[:idx_comentario]
+        if l.strip():
+            lineas_limpias.append(l)
+    return "\n".join(lineas_limpias).strip()
+
 def parsear_script_sql(contenido):
     """
     Separa correctamente un script de Oracle que contiene:
     - Sentencias DDL/DML normales terminadas en ';'
     - Bloques PL/SQL (TRIGGER, PROCEDURE, FUNCTION) delimitados por '/'
     """
+    # Eliminar comentarios multilínea /* ... */ para evitar ORA-01742 y ORA-00900
+    contenido = re.sub(r'/\*.*?\*/', '', contenido, flags=re.DOTALL)
+
     bloques = []
     lineas = contenido.splitlines()
     buffer = []
@@ -28,7 +60,7 @@ def parsear_script_sql(contenido):
         linea_strip = linea.strip()
 
         # Ignorar comentarios de una sola línea cuando no estamos dentro de un bloque
-        if not en_plsql and linea_strip.startswith("--"):
+        if not en_plsql and (not linea_strip or linea_strip.startswith("--")):
             continue
 
         linea_up = linea_strip.upper()
@@ -55,8 +87,8 @@ def parsear_script_sql(contenido):
                 texto = "\n".join(buffer)
                 partes = texto.split(";")
                 for p in partes[:-1]:
-                    p_limpio = p.strip()
-                    if p_limpio and not p_limpio.startswith("--"):
+                    p_limpio = limpiar_sql_fragmento(p)
+                    if p_limpio:
                         bloques.append(p_limpio)
                 resto = partes[-1].strip()
                 buffer = [resto] if resto else []
@@ -65,8 +97,8 @@ def parsear_script_sql(contenido):
         resto_final = "\n".join(buffer).strip()
         if resto_final and resto_final != "/":
             for p in resto_final.split(";"):
-                p_limpio = p.strip()
-                if p_limpio and not p_limpio.startswith("--"):
+                p_limpio = limpiar_sql_fragmento(p)
+                if p_limpio:
                     bloques.append(p_limpio)
 
     return bloques
@@ -96,11 +128,18 @@ def traducir_error_oracle(error, contexto=None):
     # --------------------------------------------------------------------------
     # 1. ERRORES LANZADOS POR TRIGGERS DEL PROYECTO (RAISE_APPLICATION_ERROR)
     # --------------------------------------------------------------------------
-    if "20008" in mensaje_mayus or "20010" in mensaje_mayus or "AUTOATENCION" in mensaje_mayus:
+    if "20008" in mensaje_mayus or "AUTOATENCION" in mensaje_mayus or "AUTO-ATENCION" in mensaje_mayus or "AUTOATENCIÓN" in mensaje_mayus:
         return (
-            "❌ REGLA DE NEGOCIO VIOLADA: UN MÉDICO NO PUEDE AUTO-ATENDERSE\n"
+            "❌ REGLA DE NEGOCIO VIOLADA: UN MÉDICO NO PUEDE AUTO-ATENDERSE (Trigger trg_evitar_autoatencion):\n"
             "Explicación humana: El médico asignado tiene el mismo número de DNI que el paciente internado.\n"
             "Por regla de ética y control médico del hospital, un médico no puede ser el profesional a cargo de su propia internación.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "20010" in mensaje_mayus or "INTERNACION_MULTIPLE" in mensaje_mayus or "INTERNACION ACTIVA" in mensaje_mayus or "INTERNACIÓN ACTIVA" in mensaje_mayus:
+        return (
+            "❌ REGLA DE NEGOCIO VIOLADA: PACIENTE CON INTERNACIÓN ACTIVA (Trigger trg_evitar_internacion_multiple):\n"
+            "Explicación humana: El paciente ya cuenta con una internación en curso sin fecha de alta médica.\n"
+            "Por regla del hospital, no se puede registrar una nueva internación para un paciente que ya se encuentra actualmente internado.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "20001" in mensaje_mayus:

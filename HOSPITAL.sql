@@ -113,6 +113,7 @@ insert into paciente (
      'MASCULINO',
      to_date('2001-12-12','YYYY-MM-DD') );
 
+-- Caso para probar que el trigger evite que se atienda a sí mismo si fuera paciente y médico a la vez:
 insert into medico (
    numero_de_matricula,
    cuil,
@@ -122,7 +123,7 @@ insert into medico (
    ( 'M100',
      '27111111119',
      2,
-     '11111111' ); -- Este es un caso para probar que el trigger evite que se atienda a sí mismo si fuera paciente y médico a la vez.
+     '11111111' );
 insert into medico (
    numero_de_matricula,
    cuil,
