@@ -315,8 +315,8 @@ CREATE OR REPLACE PROCEDURE listar_camas_disponibles (p_resumen OUT SYS_REFCURSO
             SELECT s.ID_SECTOR AS sector,
                 s.NOMBRE, COUNT(*)
             FROM SECTOR s
-            JOIN HABITACION h ON s.ID_SECTOR = h.ID_SECTOR
-            JOIN CAMA c ON h.ID_HABITACION = c.ID_HABITACION
+            INNER JOIN HABITACION h ON s.ID_SECTOR = h.ID_SECTOR
+            INNER JOIN CAMA c ON h.ID_HABITACION = c.ID_HABITACION
             WHERE c.ESTADO = 'LIBRE'
             GROUP BY s.ID_SECTOR, s.NOMBRE
             ORDER BY s.NOMBRE;
@@ -395,30 +395,26 @@ BEGIN
     VALUES (USER, SYSTIMESTAMP, v_operacion, v_matricula, v_id_guardia);
 END;
 /
-CREATE OR REPLACE TRIGGER trg_validar_rol_guardia
-BEFORE INSERT OR UPDATE ON CUBIERTA_POR
-FOR EACH ROW
-DECLARE
-    v_rol VARCHAR2(20);
-BEGIN
-    -- Obtenemos el rol de la persona asociada a la matrícula médica
-    SELECT p.rol INTO v_rol
-    FROM MEDICO m
-    JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
-    WHERE m.numero_de_matricula = :NEW.numero_de_matricula;
-
-    -- Validamos que el rol no sea paciente (manejando posibles nulos)
-    IF v_rol IS NOT NULL AND UPPER(v_rol) = 'PACIENTE' THEN
-        RAISE_APPLICATION_ERROR(-20006, 'Error: No se puede asignar una guardia a una persona registrada con el rol de PACIENTE.');
-    END IF;
-    
-EXCEPTION
-    WHEN NO_DATA_FOUND THEN
-        -- Si por algún motivo de integridad no se encuentra la persona, se rechaza
-        RAISE_APPLICATION_ERROR(-20007, 'Error: No se encontró la información personal del médico.');
-END;
-/
-
+-- ME PARECE QUE ESTE TRIGGER NO VA:
+-- DROP TRIGGER trg_validar_rol_guardia;
+-- CREATE OR REPLACE TRIGGER trg_validar_rol_guardia
+-- BEFORE INSERT OR UPDATE ON CUBIERTA_POR
+-- FOR EACH ROW
+-- DECLARE
+--     v_rol VARCHAR2(20);
+-- BEGIN
+--     SELECT p.rol INTO v_rol
+--     FROM MEDICO m
+--     JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
+--     WHERE m.numero_de_matricula = :NEW.numero_de_matricula;
+--     IF v_rol IS NOT NULL AND UPPER(v_rol) = 'PACIENTE' THEN
+--         RAISE_APPLICATION_ERROR(-20006, 'Error: No se puede asignar una guardia a una persona registrada con el rol de PACIENTE.');
+--     END IF;
+-- EXCEPTION
+--     WHEN NO_DATA_FOUND THEN
+--         RAISE_APPLICATION_ERROR(-20007, 'Error: No se encontró la información personal del médico.');
+-- END;
+-- /
 
 CREATE OR REPLACE TRIGGER trg_evitar_autoatencion
 BEFORE INSERT OR UPDATE ON INTERNACION
@@ -433,5 +429,27 @@ BEGIN
    IF v_dni_medico = :NEW.numero_de_DNI THEN
         RAISE_APPLICATION_ERROR(-20008, 'Regla de negocio: Un médico no puede ser el profesional a cargo de su propia internación.');
     END IF;
+END;
+/
+CREATE OR REPLACE TRIGGER trg_evitar_internacion_multiple
+BEFORE INSERT OR UPDATE ON INTERNACION
+FOR EACH ROW
+DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+    v_internaciones_activas NUMBER;
+BEGIN
+    -- Buscamos internaciones previas del mismo paciente que aún no tengan fecha de fin (alta)
+    SELECT COUNT(*) INTO v_internaciones_activas
+    FROM INTERNACION
+    WHERE numero_de_DNI = :NEW.numero_de_DNI
+      AND id_internacion != NVL(:NEW.id_internacion, 0) -- Ignoramos la fila actual en caso de un UPDATE
+      AND fecha_fin IS NULL;
+
+    IF v_internaciones_activas > 0 THEN
+        RAISE_APPLICATION_ERROR(-20010, 'Regla de negocio: El paciente ya tiene una internación activa (sin fecha de alta).');
+    END IF;
+    
+    -- Cerramos la transacción autónoma
+    COMMIT;
 END;
 /

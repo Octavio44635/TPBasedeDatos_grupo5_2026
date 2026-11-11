@@ -468,8 +468,7 @@ insert into cama (
      1,
      'LIBRE' );
 
--- Insercion valida - Paciente Micaela Green ('11111111') atendida por el medico Octavio Esteban ('M102')
--- Debe ejecutarse con exito para que los inserts siguientes (POSEE, COMENTARIO con id_internacion = 1) funcionen
+
 insert into internacion (
    fecha_inicio,
    numero_de_dni,
@@ -550,6 +549,14 @@ insert into tiene (
    id_especialidad,
    dispuesto
 ) values
+   ( 'M100',
+     2,
+     'Si' );
+insert into tiene (
+   numero_de_matricula,
+   id_especialidad,
+   dispuesto
+) values
    ( 'M102',
      2,
      'No' );
@@ -576,6 +583,16 @@ insert into cubierta_por (
    ( 'M101',
      1,
      1 );
+
+insert into cubierta_por (
+   numero_de_matricula,
+   id_especialidad,
+   id_guardia
+) values
+   ( 'M100',
+     2,
+     1 );
+
 insert into vacacion (
    numero_de_matricula,
    nro_vacacion,

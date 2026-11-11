@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import oracledb
 from dotenv import load_dotenv
@@ -189,7 +190,7 @@ def traducir_error_oracle(error, contexto=None):
     if "CHK_CAMA_ESTADO" in mensaje_mayus:
         return (
             "❌ ESTADO DE CAMA INVÁLIDO (Regla CHECK):\n"
-            "Explicación humana: Una cama en el hospital solo puede estar en estado 'Libre' u 'Ocupada'.\n"
+            "Explicación humana: Una cama en el hospital solo puede estar en estado 'LIBRE' u 'OCUPADA'.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "CHK_GUARDIAS_MAX" in mensaje_mayus:
@@ -201,7 +202,7 @@ def traducir_error_oracle(error, contexto=None):
     if "CHK_RONDA_TURNO" in mensaje_mayus:
         return (
             "❌ TURNO DE RONDA NO VÁLIDO (Regla CHECK):\n"
-            "Explicación humana: El turno asignado no es válido. Los turnos permitidos son 1, 2, 3 o 4 (o Mañana, Tarde, Noche).\n"
+            "Explicación humana: El turno asignado no es válido. Los turnos permitidos son 1, 2, 3 o 4.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
     if "CHK_RONDA_DIA" in mensaje_mayus:
@@ -379,6 +380,7 @@ class HospitalApp(tk.Tk):
 
         self.log_info(f"Sistema iniciado correctamente. Conectado a Oracle como usuario: '{os.getenv('DB_USER')}'.")
         self.cargar_camas_libres()
+        self.actualizar_combo_internaciones()
 
     def configurar_estilos(self):
         self.style = ttk.Style(self)
@@ -532,45 +534,113 @@ class HospitalApp(tk.Tk):
     # TAB 1: OPERACIÓN TRANSACCIONAL Y CONSULTAS DE STORED PROCEDURES
     # ==========================================================================
     def construir_tab_transaccion(self):
-        frame_izq = ttk.LabelFrame(self.tab_transaccion, text=" Registrar Internación con Cama ", padding=12)
-        frame_izq.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(0, 10))
+        # Columna izquierda: Operaciones de Internación, Traslado y Consultas
+        columna_izq = ttk.Frame(self.tab_transaccion)
+        columna_izq.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(0, 10))
 
-        ttk.Label(frame_izq, text="DNI del Paciente:").grid(row=0, column=0, sticky="w", pady=4)
-        self.txt_dni = ttk.Entry(frame_izq, width=22)
-        self.txt_dni.grid(row=0, column=1, pady=4)
+        # 1. Formulario: Registrar Internación Nueva
+        frame_internacion = ttk.LabelFrame(columna_izq, text=" 🏥 Registrar Nueva Internación con Cama ", padding=10)
+        frame_internacion.pack(fill=tk.X, pady=(0, 8))
 
-        ttk.Label(frame_izq, text="Matrícula del Médico:").grid(row=1, column=0, sticky="w", pady=4)
-        self.txt_matricula = ttk.Entry(frame_izq, width=22)
-        self.txt_matricula.grid(row=1, column=1, pady=4)
+        ttk.Label(frame_internacion, text="DNI Paciente:").grid(row=0, column=0, sticky="w", pady=3)
+        self.txt_dni = ttk.Entry(frame_internacion, width=15)
+        self.txt_dni.grid(row=0, column=1, pady=3, padx=(0, 6), sticky="w")
 
-        ttk.Label(frame_izq, text="ID de Habitación:").grid(row=2, column=0, sticky="w", pady=4)
-        self.txt_hab = ttk.Entry(frame_izq, width=22)
-        self.txt_hab.grid(row=2, column=1, pady=4)
+        ttk.Label(frame_internacion, text="Matrícula Méd.:").grid(row=0, column=2, sticky="w", pady=3)
+        self.txt_matricula = ttk.Entry(frame_internacion, width=13)
+        self.txt_matricula.grid(row=0, column=3, pady=3, sticky="w")
 
-        ttk.Label(frame_izq, text="Número de Cama:").grid(row=3, column=0, sticky="w", pady=4)
-        self.txt_cama = ttk.Entry(frame_izq, width=22)
-        self.txt_cama.grid(row=3, column=1, pady=4)
+        ttk.Label(frame_internacion, text="ID Habitación:").grid(row=1, column=0, sticky="w", pady=3)
+        self.txt_hab = ttk.Entry(frame_internacion, width=15)
+        self.txt_hab.grid(row=1, column=1, pady=3, padx=(0, 6), sticky="w")
+
+        ttk.Label(frame_internacion, text="Cama Nro:").grid(row=1, column=2, sticky="w", pady=3)
+        self.txt_cama = ttk.Entry(frame_internacion, width=13)
+        self.txt_cama.grid(row=1, column=3, pady=3, sticky="w")
 
         btn_ejecutar = tk.Button(
-            frame_izq, 
-            text="⚡ Ejecutar Transacción (COMMIT / ROLLBACK)", 
+            frame_internacion, 
+            text="⚡ Registrar Internación (COMMIT / ROLLBACK)", 
             bg="#2B6CB0", 
             fg="white", 
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 9, "bold"),
             relief="groove", 
             cursor="hand2",
             command=self.accion_registrar_internacion
         )
-        btn_ejecutar.grid(row=4, column=0, columnspan=2, pady=12, sticky="ew")
+        btn_ejecutar.grid(row=2, column=0, columnspan=4, pady=(8, 2), sticky="ew")
 
-        # Botón para probar Stored Procedure de comentarios
-        frame_sp_comentarios = ttk.LabelFrame(frame_izq, text=" Consultar Comentarios (Stored Procedure) ", padding=8)
-        frame_sp_comentarios.grid(row=5, column=0, columnspan=2, pady=(10, 4), sticky="ew")
+        # 2. Formulario: Traslado / Cambio de Cama
+        frame_traslado = ttk.LabelFrame(columna_izq, text=" 🔄 Traslado / Cambio de Cama (Trigger trg_liberar_cama_cambio) ", padding=10)
+        frame_traslado.pack(fill=tk.X, pady=(0, 8))
+
+        ttk.Label(frame_traslado, text="ID Internación:").grid(row=0, column=0, sticky="w", pady=3)
+        self.txt_traslado_id_int = ttk.Combobox(frame_traslado, width=15)
+        self.txt_traslado_id_int.grid(row=0, column=1, pady=3, padx=(0, 4), sticky="w")
+        self.txt_traslado_id_int.bind("<<ComboboxSelected>>", self.accion_consultar_cama_actual)
+        self.txt_traslado_id_int.bind("<Return>", self.accion_consultar_cama_actual)
+
+        btn_info_paciente = tk.Button(
+            frame_traslado,
+            text="🔍 Info Cama Actual",
+            bg="#EDF2F7",
+            font=("Segoe UI", 8),
+            cursor="hand2",
+            command=self.accion_consultar_cama_actual
+        )
+        btn_info_paciente.grid(row=0, column=2, columnspan=2, sticky="ew", pady=3)
+
+        self.lbl_traslado_info = ttk.Label(
+            frame_traslado, 
+            text="Selecciona o escribe el ID de internación activa.", 
+            font=("Segoe UI", 8, "italic"), 
+            foreground="#4A5568",
+            wraplength=380,
+            justify="left"
+        )
+        self.lbl_traslado_info.grid(row=1, column=0, columnspan=4, sticky="w", pady=(1, 5))
+
+        ttk.Label(frame_traslado, text="Nueva Hab.:").grid(row=2, column=0, sticky="w", pady=3)
+        self.txt_traslado_hab = ttk.Entry(frame_traslado, width=15)
+        self.txt_traslado_hab.grid(row=2, column=1, pady=3, padx=(0, 6), sticky="w")
+
+        ttk.Label(frame_traslado, text="Nueva Cama:").grid(row=2, column=2, sticky="w", pady=3)
+        self.txt_traslado_cama = ttk.Entry(frame_traslado, width=13)
+        self.txt_traslado_cama.grid(row=2, column=3, pady=3, sticky="w")
+
+        frame_botones_traslado = ttk.Frame(frame_traslado)
+        frame_botones_traslado.grid(row=3, column=0, columnspan=4, pady=(8, 2), sticky="ew")
+
+        btn_usar_cama_sel = tk.Button(
+            frame_botones_traslado,
+            text="📋 Usar Cama de Tabla",
+            bg="#E2E8F0",
+            font=("Segoe UI", 8),
+            cursor="hand2",
+            command=self.accion_copiar_cama_seleccionada
+        )
+        btn_usar_cama_sel.pack(side=tk.LEFT, padx=(0, 6))
+
+        btn_ejecutar_traslado = tk.Button(
+            frame_botones_traslado,
+            text="🔀 Trasladar Paciente (COMMIT)",
+            bg="#2C7A7B",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="groove",
+            cursor="hand2",
+            command=self.accion_trasladar_cama
+        )
+        btn_ejecutar_traslado.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+
+        # 3. Consultar Comentarios (Stored Procedure)
+        frame_sp_comentarios = ttk.LabelFrame(columna_izq, text=" 💬 Visitas Médicas (Stored Procedure) ", padding=8)
+        frame_sp_comentarios.pack(fill=tk.X)
 
         ttk.Label(frame_sp_comentarios, text="ID Internación:").grid(row=0, column=0, sticky="w", pady=2)
-        self.txt_id_int_comentario = ttk.Entry(frame_sp_comentarios, width=12)
+        self.txt_id_int_comentario = ttk.Entry(frame_sp_comentarios, width=10)
         self.txt_id_int_comentario.insert(0, "1")
-        self.txt_id_int_comentario.grid(row=0, column=1, pady=2, sticky="w")
+        self.txt_id_int_comentario.grid(row=0, column=1, pady=2, padx=(0, 8), sticky="w")
 
         btn_ver_sp_comentarios = tk.Button(
             frame_sp_comentarios,
@@ -580,7 +650,7 @@ class HospitalApp(tk.Tk):
             font=("Segoe UI", 9, "bold"),
             command=self.accion_consultar_comentarios_sp
         )
-        btn_ver_sp_comentarios.grid(row=1, column=0, columnspan=2, pady=4, sticky="ew")
+        btn_ver_sp_comentarios.grid(row=0, column=2, pady=2, sticky="ew")
 
         # Panel derecho: Camas libres (Resumen por Sector + Detalle)
         frame_der = ttk.Frame(self.tab_transaccion)
@@ -613,6 +683,9 @@ class HospitalApp(tk.Tk):
         self.tabla_camas.column("Cama", width=80, anchor="center")
         self.tabla_camas.column("Estado", width=80, anchor="center")
         self.tabla_camas.pack(fill=tk.BOTH, expand=True, pady=(2, 4))
+        self.tabla_camas.bind("<Double-1>", self.on_doble_clic_cama)
+
+        ttk.Label(frame_detalle, text=" Doble clic en una fila de la tabla carga la habitación y cama automáticamente.", font=("Segoe UI", 8, "italic"), foreground="#4A5568").pack(anchor="w", padx=4)
 
         btn_refrescar_camas = tk.Button(
             frame_der, text="🔄 Actualizar Camas y Resumen (Invocar SP)", bg="#E2E8F0", cursor="hand2", command=self.cargar_camas_libres
@@ -699,6 +772,7 @@ class HospitalApp(tk.Tk):
             self.txt_hab.delete(0, tk.END)
             self.txt_cama.delete(0, tk.END)
             self.cargar_camas_libres()
+            self.actualizar_combo_internaciones()
 
         except Exception as e:
             if conn:
@@ -706,6 +780,242 @@ class HospitalApp(tk.Tk):
             self.log_error(f"Transacción ABORTADA (ROLLBACK aplicado):\n{traducir_error_oracle(e)}")
             messagebox.showerror("Error en Transacción", traducir_error_oracle(e))
 
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    def on_doble_clic_cama(self, event):
+        item = self.tabla_camas.selection()
+        if not item:
+            return
+        valores = self.tabla_camas.item(item[0], "values")
+        if valores and len(valores) >= 4:
+            hab = valores[1]
+            cama = valores[3]
+            if hasattr(self, 'txt_traslado_hab') and hasattr(self, 'txt_traslado_cama'):
+                self.txt_traslado_hab.delete(0, tk.END)
+                self.txt_traslado_hab.insert(0, hab)
+                self.txt_traslado_cama.delete(0, tk.END)
+                self.txt_traslado_cama.insert(0, cama)
+            if hasattr(self, 'txt_hab') and hasattr(self, 'txt_cama'):
+                self.txt_hab.delete(0, tk.END)
+                self.txt_hab.insert(0, hab)
+                self.txt_cama.delete(0, tk.END)
+                self.txt_cama.insert(0, cama)
+
+    def accion_copiar_cama_seleccionada(self):
+        item = self.tabla_camas.selection()
+        if not item:
+            messagebox.showinfo("Seleccionar Cama", "Por favor haz clic en una cama disponible de la tabla de la derecha.")
+            return
+        valores = self.tabla_camas.item(item[0], "values")
+        if valores and len(valores) >= 4:
+            hab = valores[1]
+            cama = valores[3]
+            self.txt_traslado_hab.delete(0, tk.END)
+            self.txt_traslado_hab.insert(0, hab)
+            self.txt_traslado_cama.delete(0, tk.END)
+            self.txt_traslado_cama.insert(0, cama)
+            self.log_info(f"Cama seleccionada para traslado: Habitación {hab}, Cama {cama}.")
+
+    def actualizar_combo_internaciones(self):
+        if not hasattr(self, 'txt_traslado_id_int'):
+            return
+        conn = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT i.id_internacion, p.nombre, p.apellido, i.numero_de_DNI
+                FROM INTERNACION i
+                JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
+                WHERE i.fecha_fin IS NULL
+                ORDER BY i.id_internacion DESC
+            """)
+            filas = cursor.fetchall()
+            cursor.close()
+            opciones = [f"{f[0]} - {f[1]} {f[2]} (DNI {f[3]})" for f in filas]
+            self.txt_traslado_id_int['values'] = opciones
+            if opciones and not self.txt_traslado_id_int.get():
+                self.txt_traslado_id_int.set(opciones[0])
+                self.accion_consultar_cama_actual()
+        except Exception:
+            pass
+        finally:
+            if conn:
+                conn.close()
+
+    def accion_consultar_cama_actual(self, event=None):
+        if not hasattr(self, 'txt_traslado_id_int'):
+            return
+        raw_val = self.txt_traslado_id_int.get().strip()
+        if not raw_val:
+            return
+        try:
+            id_int = int(raw_val.split()[0].replace("#", ""))
+        except ValueError:
+            self.lbl_traslado_info.config(text="⚠️ ID de internación debe ser numérico.", foreground="#C53030")
+            return
+
+        conn = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT i.id_internacion, p.nombre, p.apellido, i.numero_de_DNI, i.fecha_fin
+                FROM INTERNACION i
+                JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
+                WHERE i.id_internacion = :1
+            """, [id_int])
+            row = cursor.fetchone()
+            if not row:
+                self.lbl_traslado_info.config(text=f"❌ La internación #{id_int} no existe.", foreground="#C53030")
+                cursor.close()
+                return
+
+            id_i, nom, ape, dni, f_fin = row
+
+            cursor.execute("""
+                SELECT id_habitacion, nro_cama
+                FROM POSEE
+                WHERE id_internacion = :1
+                ORDER BY fechaHora DESC
+                FETCH FIRST 1 ROW ONLY
+            """, [id_int])
+            row_cama = cursor.fetchone()
+            cursor.close()
+
+            if f_fin is not None:
+                self.lbl_traslado_info.config(
+                    text=f"⚠️ Paciente {nom} {ape} (DNI {dni}) - ALTA MÉDICA OTORGADA ({f_fin.strftime('%d/%m/%Y')}).",
+                    foreground="#C53030"
+                )
+            elif row_cama:
+                hab_act, cama_act = row_cama
+                self.lbl_traslado_info.config(
+                    text=f"👤 {nom} {ape} (DNI {dni}) | Cama actual: Hab {hab_act}, Cama {cama_act}",
+                    foreground="#2B6CB0"
+                )
+            else:
+                self.lbl_traslado_info.config(
+                    text=f"👤 {nom} {ape} (DNI {dni}) | Sin cama previa asignada",
+                    foreground="#4A5568"
+                )
+        except Exception as e:
+            self.lbl_traslado_info.config(text=f"Error al consultar: {str(e)[:60]}", foreground="#C53030")
+        finally:
+            if conn:
+                conn.close()
+
+    def accion_trasladar_cama(self):
+        raw_val = self.txt_traslado_id_int.get().strip()
+        hab_str = self.txt_traslado_hab.get().strip()
+        cama_str = self.txt_traslado_cama.get().strip()
+
+        if not (raw_val and hab_str and cama_str):
+            messagebox.showwarning("Campos Incompletos", "Por favor completa el ID de Internación, Nueva Habitación y Nueva Cama.")
+            return
+
+        try:
+            id_int = int(raw_val.split()[0].replace("#", ""))
+            hab_nueva = int(hab_str)
+            cama_nueva = int(cama_str)
+        except ValueError:
+            self.log_error("ID de Internación, Habitación y Cama deben ser valores numéricos enteros.")
+            messagebox.showerror("Dato Inválido", "El ID de Internación, Habitación y Cama deben ser valores numéricos enteros.")
+            return
+
+        conn = None
+        cursor = None
+        try:
+            self.log_info(f"Iniciando transacción de traslado: Internación #{id_int} -> Habitación={hab_nueva}, Cama={cama_nueva}...")
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+
+            # 1. Validar existencia y estado de la internación
+            cursor.execute("""
+                SELECT i.id_internacion, i.fecha_inicio, i.fecha_fin, i.numero_de_DNI, p.nombre, p.apellido
+                FROM INTERNACION i
+                JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
+                WHERE i.id_internacion = :1
+            """, [id_int])
+            row_int = cursor.fetchone()
+            if not row_int:
+                raise Exception(f"La internación #{id_int} no existe en la base de datos.")
+            if row_int[2] is not None:
+                raise Exception(f"La internación #{id_int} ya finalizó (alta médica otorgada el {row_int[2].strftime('%d/%m/%Y')}). No se puede cambiar de cama a un paciente con alta.")
+
+            paciente_nombre = f"{row_int[4]} {row_int[5]} (DNI {row_int[3]})"
+
+            # 2. Consultar cama actual del paciente en POSEE
+            cursor.execute("""
+                SELECT id_habitacion, nro_cama
+                FROM POSEE
+                WHERE id_internacion = :1
+                ORDER BY fechaHora DESC
+                FETCH FIRST 1 ROW ONLY
+            """, [id_int])
+            row_cama_actual = cursor.fetchone()
+            hab_anterior, cama_anterior = (row_cama_actual[0], row_cama_actual[1]) if row_cama_actual else (None, None)
+
+            if hab_anterior == hab_nueva and cama_anterior == cama_nueva:
+                raise Exception(f"El paciente {paciente_nombre} ya se encuentra actualmente en la Habitación {hab_nueva}, Cama {cama_nueva}. Por favor selecciona una cama diferente para el traslado.")
+
+            # 3. Bloqueo y verificación de la nueva cama
+            cursor.execute("""
+                SELECT estado 
+                FROM CAMA 
+                WHERE id_habitacion = :1 AND nro_cama = :2 
+                FOR UPDATE
+            """, [hab_nueva, cama_nueva])
+            fila_cama = cursor.fetchone()
+            if not fila_cama:
+                raise Exception(f"La cama {cama_nueva} de la habitación {hab_nueva} no existe en la base de datos.")
+            if fila_cama[0].upper() != 'LIBRE':
+                raise Exception(f"La cama {cama_nueva} de la habitación {hab_nueva} no está disponible (Estado actual: '{fila_cama[0]}').")
+
+            # 4. Ocupar la nueva cama (respetando si la tabla usa 'OCUPADA' u 'Ocupada')
+            estado_ocupado = "OCUPADA" if fila_cama[0].isupper() else "Ocupada"
+            cursor.execute("""
+                UPDATE CAMA
+                SET estado = :1
+                WHERE id_habitacion = :2 AND nro_cama = :3
+            """, [estado_ocupado, hab_nueva, cama_nueva])
+
+            # 5. Insertar en POSEE (el Trigger 'trg_liberar_cama_cambio' liberará automáticamente la cama anterior)
+            cursor.execute("""
+                INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
+                VALUES (:1, :2, :3, SYSTIMESTAMP)
+            """, [id_int, hab_nueva, cama_nueva])
+
+            # Confirmar transacción completa
+            conn.commit()
+
+            msg_exito = (
+                f"Transacción confirmada (COMMIT):\n"
+                f"• Paciente: {paciente_nombre}\n"
+                f"• Internación #{id_int} trasladado a Habitación {hab_nueva}, Cama {cama_nueva} (Estado: OCUPADA).\n"
+            )
+            if hab_anterior is not None:
+                msg_exito += f"• Cama anterior: Habitación {hab_anterior}, Cama {cama_anterior} liberada automáticamente por el Trigger 'trg_liberar_cama_cambio'."
+
+            self.log_exito(msg_exito)
+            messagebox.showinfo("Traslado Exitoso", msg_exito)
+
+            self.txt_traslado_hab.delete(0, tk.END)
+            self.txt_traslado_cama.delete(0, tk.END)
+            self.cargar_camas_libres()
+            self.accion_consultar_cama_actual()
+            if hasattr(self, 'cargar_todas_las_camas'):
+                self.cargar_todas_las_camas()
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            self.log_error(f"Traslado ABORTADO (ROLLBACK aplicado):\n{traducir_error_oracle(e)}")
+            messagebox.showerror("Error en Traslado", traducir_error_oracle(e))
         finally:
             if cursor:
                 cursor.close()
@@ -743,7 +1053,7 @@ class HospitalApp(tk.Tk):
                 filas_detalle = cur_det.fetchall()
                 if hasattr(self, 'tabla_camas'):
                     for f in filas_detalle:
-                        self.tabla_camas.insert("", tk.END, values=(f[0], f[1], "-", f[2], "Libre"))
+                        self.tabla_camas.insert("", tk.END, values=(f[0], f[1], "-", f[2], "LIBRE"))
 
                 cur_res.close()
                 cur_det.close()
@@ -786,6 +1096,7 @@ class HospitalApp(tk.Tk):
         finally:
             if conn:
                 conn.close()
+            self.actualizar_combo_internaciones()
 
     def accion_consultar_comentarios_sp(self):
         id_int_str = self.txt_id_int_comentario.get().strip()
@@ -1572,8 +1883,8 @@ class HospitalApp(tk.Tk):
         self.cama_nro.grid(row=1, column=1, pady=4)
 
         ttk.Label(frame_form, text="Estado:").grid(row=2, column=0, sticky="w", pady=4)
-        self.cama_estado = ttk.Combobox(frame_form, values=["Libre", "Ocupada", "LIBRE", "OCUPADA"], state="readonly", width=20)
-        self.cama_estado.set("Libre")
+        self.cama_estado = ttk.Combobox(frame_form, values=["LIBRE", "OCUPADA"], state="readonly", width=20)
+        self.cama_estado.set("LIBRE")
         self.cama_estado.grid(row=2, column=1, pady=4)
 
         btn_guardar = tk.Button(
@@ -1602,7 +1913,7 @@ class HospitalApp(tk.Tk):
     def accion_insertar_cama(self):
         id_hab_str = self.cama_id_hab.get().strip()
         nro_cama_str = self.cama_nro.get().strip()
-        estado = self.cama_estado.get().strip()
+        estado = self.cama_estado.get().strip().upper()
 
         if not (id_hab_str and nro_cama_str and estado):
             messagebox.showwarning("Atención", "Todos los campos de cama son requeridos.")
