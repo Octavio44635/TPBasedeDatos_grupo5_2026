@@ -566,14 +566,8 @@ insert into guardia (
    turno,
    fecha
 ) values
-   ( 'MAÑANA',
-     sysdate + 2 );
-insert into guardia (
-   turno,
-   fecha
-) values
    ( 'NOCHE',
-     sysdate + 5 );
+     sysdate + 5);
 
 commit;
 insert into cubierta_por (

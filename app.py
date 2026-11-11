@@ -1704,7 +1704,7 @@ class HospitalApp(tk.Tk):
             self.med_ruta_foto = None
             self.lbl_foto_nombre.config(text="Sin foto")
             self.cargar_lista_medicos()
-            self.cargar_combos_asignacion_guardia()
+            self.cargar_combos_guardia()
 
         except Exception as e:
             if conn:
@@ -2200,30 +2200,55 @@ class HospitalApp(tk.Tk):
 
     # 6. Subtab Guardia
     def construir_subtab_guardia(self, parent):
-        columna_izq = ttk.Frame(parent)
-        columna_izq.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
-
-        frame_form = ttk.LabelFrame(columna_izq, text=" Crear Nueva Guardia ", padding=10)
-        frame_form.pack(fill=tk.X, pady=(0, 10))
+        """Construye el panel de alta directa, listado, modificación y baja de guardias."""
+        frame_form = ttk.LabelFrame(parent, text=" ➕ Crear Nueva Guardia (con Médico Asignado) ", padding=10)
+        frame_form.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        frame_form.columnconfigure(1, weight=1)
 
         ttk.Label(frame_form, text="Fecha (DD/MM/YYYY):").grid(row=0, column=0, sticky="w", pady=4)
-        self.guardia_fecha = ttk.Entry(frame_form, width=22)
+        self.guardia_fecha = ttk.Entry(frame_form, width=34)
         self.guardia_fecha.insert(0, datetime.now().strftime("%d/%m/%Y"))
-        self.guardia_fecha.grid(row=0, column=1, pady=4)
+        self.guardia_fecha.grid(row=0, column=1, pady=4, padx=(6, 0), sticky="ew")
 
         ttk.Label(frame_form, text="Turno:").grid(row=1, column=0, sticky="w", pady=4)
         self.guardia_turno = ttk.Combobox(
             frame_form,
             values=["MAÑANA", "TARDE", "NOCHE"],
             state="readonly",
-            width=20
+            width=32
         )
         self.guardia_turno.set("MAÑANA")
-        self.guardia_turno.grid(row=1, column=1, pady=4)
+        self.guardia_turno.grid(row=1, column=1, pady=4, padx=(6, 0), sticky="ew")
+
+        ttk.Label(frame_form, text="Médico:").grid(row=2, column=0, sticky="w", pady=4)
+        self.cb_guardia_medico = ttk.Combobox(frame_form, state="readonly", width=32)
+        self.cb_guardia_medico.grid(row=2, column=1, pady=4, padx=(6, 0), sticky="ew")
+        self.cb_guardia_medico.bind(
+            "<<ComboboxSelected>>",
+            lambda _e: self._cargar_especialidades_para_combo(
+                self.cb_guardia_medico, self.cb_guardia_especialidad, self.lbl_guardia_esp_info
+            )
+        )
+
+        ttk.Label(frame_form, text="Especialidad:").grid(row=3, column=0, sticky="w", pady=4)
+        self.cb_guardia_especialidad = ttk.Combobox(frame_form, state="readonly", width=32)
+        self.cb_guardia_especialidad.grid(row=3, column=1, pady=4, padx=(6, 0), sticky="ew")
+        self.cb_guardia_especialidad.bind(
+            "<<ComboboxSelected>>",
+            lambda _e: self._actualizar_label_esp_guardia(self.cb_guardia_especialidad, self.lbl_guardia_esp_info)
+        )
+
+        self.lbl_guardia_esp_info = ttk.Label(
+            frame_form,
+            text="",
+            font=("Segoe UI", 8, "italic"),
+            foreground="#4A5568"
+        )
+        self.lbl_guardia_esp_info.grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 4))
 
         btn_guardar = tk.Button(
             frame_form,
-            text="💾 Crear Guardia",
+            text="💾 Crear Guardia con Médico",
             bg="#276749",
             fg="white",
             font=("Segoe UI", 9, "bold"),
@@ -2231,45 +2256,16 @@ class HospitalApp(tk.Tk):
             cursor="hand2",
             command=self.accion_insertar_guardia
         )
-        btn_guardar.grid(row=2, column=0, columnspan=2, pady=10, sticky="ew")
+        btn_guardar.grid(row=5, column=0, columnspan=2, pady=(8, 6), sticky="ew")
 
-        frame_asignar = ttk.LabelFrame(columna_izq, text=" 🩺 Asignar Guardia No Asignada a Médico ", padding=10)
-        frame_asignar.pack(fill=tk.X)
-        frame_asignar.columnconfigure(1, weight=1)
-
-        ttk.Label(frame_asignar, text="Guardia sin asignar:").grid(row=0, column=0, sticky="w", pady=4)
-        self.cb_guardia_sin_asignar = ttk.Combobox(frame_asignar, state="readonly", width=36)
-        self.cb_guardia_sin_asignar.grid(row=0, column=1, pady=4, padx=(6, 0), sticky="ew")
-
-        ttk.Label(frame_asignar, text="Médico:").grid(row=1, column=0, sticky="w", pady=4)
-        self.cb_guardia_medico = ttk.Combobox(frame_asignar, state="readonly", width=36)
-        self.cb_guardia_medico.grid(row=1, column=1, pady=4, padx=(6, 0), sticky="ew")
-        self.cb_guardia_medico.bind("<<ComboboxSelected>>", self.cargar_especialidades_medico_guardia)
-
-        ttk.Label(frame_asignar, text="Especialidad:").grid(row=2, column=0, sticky="w", pady=4)
-        self.cb_guardia_especialidad = ttk.Combobox(frame_asignar, state="readonly", width=36)
-        self.cb_guardia_especialidad.grid(row=2, column=1, pady=4, padx=(6, 0), sticky="ew")
-        self.cb_guardia_especialidad.bind("<<ComboboxSelected>>", self.actualizar_info_especialidad_guardia)
-
-        self.lbl_guardia_esp_info = ttk.Label(
-            frame_asignar,
-            text="",
+        ttk.Label(
+            frame_form,
+            text="ℹ️ Toda guardia requiere al menos un médico asignado al crearse.",
             font=("Segoe UI", 8, "italic"),
-            foreground="#4A5568"
-        )
-        self.lbl_guardia_esp_info.grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 4))
-
-        btn_asignar = tk.Button(
-            frame_asignar,
-            text="🔗 Asignar Guardia a Médico",
-            bg="#2B6CB0",
-            fg="white",
-            font=("Segoe UI", 9, "bold"),
-            relief="groove",
-            cursor="hand2",
-            command=self.accion_asignar_guardia_medico
-        )
-        btn_asignar.grid(row=4, column=0, columnspan=2, pady=8, sticky="ew")
+            foreground="#4A5568",
+            wraplength=310,
+            justify="left"
+        ).grid(row=6, column=0, columnspan=2, sticky="w")
 
         frame_lista = ttk.LabelFrame(parent, text=" Guardias Programadas ", padding=10)
         frame_lista.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -2282,60 +2278,193 @@ class HospitalApp(tk.Tk):
         self.tabla_guardias.column("ID", width=75, anchor="center")
         self.tabla_guardias.column("Fecha", width=95, anchor="center")
         self.tabla_guardias.column("Turno", width=85, anchor="center")
-        self.tabla_guardias.column("Medicos", width=260, anchor="w")
+        self.tabla_guardias.column("Medicos", width=270, anchor="w")
         self.tabla_guardias.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
-        self.tabla_guardias.bind("<Double-1>", self.on_doble_clic_guardia)
+        self.tabla_guardias.bind("<Double-1>", lambda _e: self.abrir_dialogo_modificar_guardia())
 
         ttk.Label(
             frame_lista,
-            text=" Doble clic en una guardia 'Sin asignar' la precarga para asignar.",
+            text=" Selecciona una guardia para modificar o eliminar (doble clic abre Modificar).",
             font=("Segoe UI", 8, "italic"),
             foreground="#4A5568"
-        ).pack(anchor="w", pady=(0, 4))
+        ).pack(anchor="w", pady=(0, 6))
+
+        frame_botones_guardia = ttk.Frame(frame_lista)
+        frame_botones_guardia.pack(fill=tk.X)
 
         btn_refrescar = tk.Button(
-            frame_lista,
+            frame_botones_guardia,
             text="🔄 Refrescar Guardias",
             bg="#E2E8F0",
             cursor="hand2",
             command=self.refrescar_panel_guardias
         )
-        btn_refrescar.pack(anchor="w")
+        btn_refrescar.pack(side=tk.LEFT, padx=(0, 6))
+
+        btn_modificar = tk.Button(
+            frame_botones_guardia,
+            text="✏️ Modificar Guardia",
+            bg="#2B6CB0",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="groove",
+            cursor="hand2",
+            command=self.abrir_dialogo_modificar_guardia
+        )
+        btn_modificar.pack(side=tk.LEFT, padx=(0, 6))
+
+        btn_eliminar = tk.Button(
+            frame_botones_guardia,
+            text="🗑️ Eliminar Guardia",
+            bg="#9B2C2C",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="groove",
+            cursor="hand2",
+            command=self.accion_eliminar_guardia
+        )
+        btn_eliminar.pack(side=tk.LEFT)
 
         self.refrescar_panel_guardias()
 
-    def on_doble_clic_guardia(self, event):
-        """Precarga en el selector una guardia sin asignar al hacer doble clic."""
-        item = self.tabla_guardias.selection()
-        if not item:
-            return
-        valores = self.tabla_guardias.item(item[0], "values")
-        if not valores or len(valores) < 4:
+    @staticmethod
+    def _parsear_clave_combo(valor):
+        return valor.split(" - ", 1)[0].strip()
+
+    def _obtener_opciones_medicos(self, cursor):
+        cursor.execute("""
+            SELECT m.numero_de_matricula, p.apellido, p.nombre
+            FROM MEDICO m
+            JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
+            ORDER BY p.apellido, p.nombre
+        """)
+        return [f"{m[0]} - {m[1]}, {m[2]}" for m in cursor.fetchall()]
+
+    def _cargar_especialidades_para_combo(self, cb_medico, cb_esp, lbl_info=None, cursor=None):
+        """Carga especialidades ordenadas por disponibilidad para el médico del combo."""
+        med_sel = cb_medico.get().strip()
+        if not med_sel:
+            cb_esp["values"] = []
+            cb_esp.set("")
+            self._actualizar_label_esp_guardia(cb_esp, lbl_info)
             return
 
-        id_guardia = str(valores[0])
-        estado_asig = str(valores[3])
-        if estado_asig != "Sin asignar":
-            self.log_info(f"La guardia #{id_guardia} ya está asignada ({estado_asig}).")
-            return
+        matricula = self._parsear_clave_combo(med_sel)
+        conn_propia = None
+        cursor_local = cursor
+        try:
+            if cursor_local is None:
+                conn_propia = obtener_conexion()
+                cursor_local = conn_propia.cursor()
 
-        for opcion in self.cb_guardia_sin_asignar["values"]:
-            if opcion.startswith(f"{id_guardia} - "):
-                self.cb_guardia_sin_asignar.set(opcion)
-                self.log_info(f"Guardia #{id_guardia} seleccionada para asignar.")
-                break
+            cursor_local.execute("""
+                SELECT e.id_especialidad, e.nombre, t.dispuesto
+                FROM ESPECIALIDAD e
+                LEFT JOIN TIENE t
+                       ON e.id_especialidad = t.id_especialidad
+                      AND t.numero_de_matricula = :1
+                ORDER BY CASE
+                             WHEN UPPER(t.dispuesto) = 'SI' THEN 0
+                             WHEN UPPER(t.dispuesto) = 'NO' THEN 1
+                             ELSE 2
+                         END,
+                         e.nombre
+            """, [matricula])
+
+            opciones_esp = []
+            for id_esp, nombre, dispuesto in cursor_local.fetchall():
+                estado = f"Disp: {dispuesto}" if dispuesto is not None else "No reg."
+                opciones_esp.append(f"{id_esp} - {nombre} ({estado})")
+
+            cb_esp["values"] = opciones_esp
+            if opciones_esp:
+                cb_esp.current(0)
+            else:
+                cb_esp.set("")
+            self._actualizar_label_esp_guardia(cb_esp, lbl_info)
+
+        except Exception as e:
+            self.log_error(f"No se pudieron cargar las especialidades del médico: {traducir_error_oracle(e)}")
+        finally:
+            if conn_propia:
+                if cursor_local:
+                    cursor_local.close()
+                conn_propia.close()
+
+    @staticmethod
+    def _actualizar_label_esp_guardia(cb_esp, lbl_info):
+        """Actualiza la etiqueta descriptiva de disponibilidad de la especialidad seleccionada."""
+        if lbl_info is None:
+            return
+        esp_sel = cb_esp.get().strip()
+        esp_up = esp_sel.upper()
+        if not esp_sel:
+            lbl_info.config(text="", foreground="#4A5568")
+        elif "(DISP: SI)" in esp_up:
+            lbl_info.config(text="✅ Médico dispuesto a cubrir esta especialidad.", foreground="#276749")
+        elif "(DISP: NO)" in esp_up:
+            lbl_info.config(text="⚠️ Figura NO dispuesto en TIENE para esta especialidad.", foreground="#C53030")
+        else:
+            lbl_info.config(text="⚠️ Especialidad sin registrar en TIENE para este médico.", foreground="#C53030")
 
     def refrescar_panel_guardias(self):
-        """Actualiza tanto la tabla de guardias como los selectores de asignación."""
+        """Actualiza la tabla de guardias y los selectores de médicos/especialidades."""
         self.cargar_lista_guardias()
-        self.cargar_combos_asignacion_guardia()
+        self.cargar_combos_guardia()
+
+    def cargar_combos_guardia(self):
+        """Carga la lista de médicos y sus especialidades para el alta directa de guardias."""
+        if not hasattr(self, 'cb_guardia_medico'):
+            return
+
+        conn = None
+        cursor = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            opciones_medicos = self._obtener_opciones_medicos(cursor)
+            sel_medico = self.cb_guardia_medico.get()
+            self.cb_guardia_medico["values"] = opciones_medicos
+            if sel_medico in opciones_medicos:
+                self.cb_guardia_medico.set(sel_medico)
+            elif opciones_medicos:
+                self.cb_guardia_medico.current(0)
+            else:
+                self.cb_guardia_medico.set("")
+
+            self._cargar_especialidades_para_combo(
+                self.cb_guardia_medico, self.cb_guardia_especialidad, self.lbl_guardia_esp_info, cursor=cursor
+            )
+        except Exception as e:
+            self.log_error(f"No se pudieron cargar los médicos para guardias: {traducir_error_oracle(e)}")
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
     def accion_insertar_guardia(self):
+        """Crea una guardia y la asigna directamente a un médico en una sola transacción."""
         fecha_str = self.guardia_fecha.get().strip()
         turno = self.guardia_turno.get().strip().upper()
+        med_sel = self.cb_guardia_medico.get().strip()
+        esp_sel = self.cb_guardia_especialidad.get().strip()
 
         if not (fecha_str and turno):
             messagebox.showwarning("Atención", "Fecha y turno son obligatorios.")
+            return
+        if not (med_sel and esp_sel):
+            messagebox.showwarning(
+                "Médico Obligatorio",
+                "No puede existir una guardia sin un médico asignado. Selecciona un médico y una especialidad."
+            )
+            return
+
+        try:
+            matricula = self._parsear_clave_combo(med_sel)
+            id_especialidad = int(self._parsear_clave_combo(esp_sel))
+        except ValueError:
+            messagebox.showerror("Dato Inválido", "La especialidad seleccionada no tiene un ID válido.")
             return
 
         fmt = 'YYYY-MM-DD' if '-' in fecha_str else 'DD/MM/YYYY'
@@ -2352,17 +2481,23 @@ class HospitalApp(tk.Tk):
                 VALUES (:1, TO_DATE(:2, '{fmt}'))
                 RETURNING id_guardia INTO :3
             """, [turno, fecha_str, id_guardia_var])
+            nuevo_id = int(id_guardia_var.getvalue()[0])
+
+            cursor.execute("""
+                INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia)
+                VALUES (:1, :2, :3)
+            """, [matricula, id_especialidad, nuevo_id])
 
             conn.commit()
-            nuevo_id = int(id_guardia_var.getvalue()[0])
-            self.log_exito(f"Guardia #{nuevo_id} ({turno} del {fecha_str}) creada con éxito.")
-            messagebox.showinfo("Éxito", f"Guardia #{nuevo_id} creada exitosamente.")
+            msg = f"Guardia #{nuevo_id} ({turno} del {fecha_str}) creada y asignada a '{med_sel}'."
+            self.log_exito(msg)
+            messagebox.showinfo("Éxito", msg)
             self.refrescar_panel_guardias()
 
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al crear guardia:\n{traducir_error_oracle(e)}")
+            self.log_error(f"Error al crear y asignar guardia (ROLLBACK aplicado):\n{traducir_error_oracle(e)}")
             messagebox.showerror("Error", traducir_error_oracle(e))
         finally:
             if cursor:
@@ -2406,159 +2541,314 @@ class HospitalApp(tk.Tk):
             if conn:
                 conn.close()
 
-    def cargar_combos_asignacion_guardia(self):
-        """Carga guardias sin asignar, médicos y especialidades en sus selectores."""
-        if not hasattr(self, 'cb_guardia_sin_asignar'):
+    def abrir_dialogo_modificar_guardia(self):
+        """Abre un diálogo modal para editar una guardia y sus médicos (mínimo 1 obligatorio)."""
+        seleccion = self.tabla_guardias.selection()
+        if not seleccion:
+            messagebox.showinfo("Seleccionar Guardia", "Por favor selecciona una guardia de la lista para modificar.")
             return
+
+        valores = self.tabla_guardias.item(seleccion[0], "values")
+        if not valores:
+            return
+        id_guardia = int(valores[0])
 
         conn = None
         cursor = None
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
+            cursor.execute("""
+                SELECT TO_CHAR(fecha, 'DD/MM/YYYY'), turno
+                FROM GUARDIA
+                WHERE id_guardia = :1
+            """, [id_guardia])
+            row_g = cursor.fetchone()
+            if not row_g:
+                messagebox.showerror("No Encontrada", f"La guardia #{id_guardia} ya no existe en la base de datos.")
+                self.refrescar_panel_guardias()
+                return
+
+            fecha_actual, turno_actual = row_g
 
             cursor.execute("""
-                SELECT g.id_guardia, TO_CHAR(g.fecha, 'DD/MM/YYYY'), g.turno
-                FROM GUARDIA g
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM CUBIERTA_POR cp WHERE cp.id_guardia = g.id_guardia
-                )
-                ORDER BY g.fecha ASC, g.id_guardia ASC
-            """)
-            opciones_guardias = [f"{g[0]} - {g[1]} ({g[2]})" for g in cursor.fetchall()]
-            sel_guardia = self.cb_guardia_sin_asignar.get()
-            self.cb_guardia_sin_asignar["values"] = opciones_guardias
-            if sel_guardia in opciones_guardias:
-                self.cb_guardia_sin_asignar.set(sel_guardia)
-            elif opciones_guardias:
-                self.cb_guardia_sin_asignar.current(0)
-            else:
-                self.cb_guardia_sin_asignar.set("")
-
-            cursor.execute("""
-                SELECT m.numero_de_matricula, p.apellido, p.nombre
-                FROM MEDICO m
+                SELECT cp.numero_de_matricula, p.apellido, p.nombre, cp.id_especialidad, e.nombre
+                FROM CUBIERTA_POR cp
+                JOIN MEDICO m ON cp.numero_de_matricula = m.numero_de_matricula
                 JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
-                ORDER BY p.apellido, p.nombre
-            """)
-            opciones_medicos = [f"{m[0]} - {m[1]}, {m[2]}" for m in cursor.fetchall()]
-            sel_medico = self.cb_guardia_medico.get()
-            self.cb_guardia_medico["values"] = opciones_medicos
-            if sel_medico in opciones_medicos:
-                self.cb_guardia_medico.set(sel_medico)
-            elif opciones_medicos:
-                self.cb_guardia_medico.current(0)
-            else:
-                self.cb_guardia_medico.set("")
-
-            self.cargar_especialidades_medico_guardia(cursor=cursor)
-
+                JOIN ESPECIALIDAD e ON cp.id_especialidad = e.id_especialidad
+                WHERE cp.id_guardia = :1
+                ORDER BY p.apellido, e.nombre
+            """, [id_guardia])
+            asignaciones_actuales = cursor.fetchall()
+            opciones_medicos = self._obtener_opciones_medicos(cursor)
         except Exception as e:
-            self.log_error(f"No se pudieron cargar los datos para asignar guardias: {traducir_error_oracle(e)}")
+            self.log_error(f"Error al cargar guardia #{id_guardia}: {traducir_error_oracle(e)}")
+            messagebox.showerror("Error", traducir_error_oracle(e))
+            return
         finally:
             if cursor:
                 cursor.close()
             if conn:
                 conn.close()
 
-    def cargar_especialidades_medico_guardia(self, event=None, cursor=None):
-        """Carga las especialidades ordenadas por disponibilidad para el médico seleccionado."""
-        if not hasattr(self, 'cb_guardia_especialidad'):
-            return
+        asignaciones_originales = {(r[0], r[3]) for r in asignaciones_actuales}
+        asignaciones = [
+            {
+                "mat": r[0],
+                "med_txt": f"{r[0]} - {r[1]}, {r[2]}",
+                "id_esp": r[3],
+                "esp_txt": r[4],
+            }
+            for r in asignaciones_actuales
+        ]
 
-        med_sel = self.cb_guardia_medico.get().strip()
-        if not med_sel:
-            self.cb_guardia_especialidad["values"] = []
-            self.cb_guardia_especialidad.set("")
-            self.actualizar_info_especialidad_guardia()
-            return
+        modal = tk.Toplevel(self)
+        modal.title(f"Modificar Guardia #{id_guardia}")
+        modal.configure(bg=self.COLOR_FONDO)
+        modal.transient(self)
+        modal.grab_set()
+        modal.resizable(False, False)
 
-        matricula = med_sel.split(" - ", 1)[0].strip()
-        conn_propia = None
-        cursor_local = cursor
-        try:
-            if cursor_local is None:
-                conn_propia = obtener_conexion()
-                cursor_local = conn_propia.cursor()
+        cont = ttk.Frame(modal, padding=12)
+        cont.pack(fill=tk.BOTH, expand=True)
 
-            cursor_local.execute("""
-                SELECT e.id_especialidad, e.nombre, t.dispuesto
-                FROM ESPECIALIDAD e
-                LEFT JOIN TIENE t
-                       ON e.id_especialidad = t.id_especialidad
-                      AND t.numero_de_matricula = :1
-                ORDER BY CASE
-                             WHEN UPPER(t.dispuesto) = 'SI' THEN 0
-                             WHEN UPPER(t.dispuesto) = 'NO' THEN 1
-                             ELSE 2
-                         END,
-                         e.nombre
-            """, [matricula])
+        frame_datos = ttk.LabelFrame(cont, text=f" Datos de la Guardia #{id_guardia} ", padding=10)
+        frame_datos.pack(fill=tk.X, pady=(0, 8))
 
-            opciones_esp = []
-            for id_esp, nombre, dispuesto in cursor_local.fetchall():
-                estado = f"Disp: {dispuesto}" if dispuesto is not None else "No reg."
-                opciones_esp.append(f"{id_esp} - {nombre} ({estado})")
+        ttk.Label(frame_datos, text="Fecha (DD/MM/YYYY):").grid(row=0, column=0, sticky="w", pady=4)
+        entry_fecha = ttk.Entry(frame_datos, width=18)
+        entry_fecha.insert(0, fecha_actual)
+        entry_fecha.grid(row=0, column=1, padx=(6, 14), pady=4, sticky="w")
 
-            self.cb_guardia_especialidad["values"] = opciones_esp
-            if opciones_esp:
-                self.cb_guardia_especialidad.current(0)
+        ttk.Label(frame_datos, text="Turno:").grid(row=0, column=2, sticky="w", pady=4)
+        cb_turno = ttk.Combobox(frame_datos, values=["MAÑANA", "TARDE", "NOCHE"], state="readonly", width=15)
+        cb_turno.set(turno_actual)
+        cb_turno.grid(row=0, column=3, padx=(6, 0), pady=4, sticky="w")
+
+        frame_meds = ttk.LabelFrame(cont, text=" Médicos Asignados (mínimo 1 obligatorio) ", padding=10)
+        frame_meds.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+        frame_meds.columnconfigure(1, weight=1)
+
+        tree_asig = ttk.Treeview(frame_meds, columns=("Matricula", "Medico", "Especialidad"), show="headings", height=4)
+        tree_asig.heading("Matricula", text="Matrícula")
+        tree_asig.heading("Medico", text="Médico")
+        tree_asig.heading("Especialidad", text="Especialidad")
+        tree_asig.column("Matricula", width=90, anchor="center")
+        tree_asig.column("Medico", width=190, anchor="w")
+        tree_asig.column("Especialidad", width=160, anchor="w")
+        tree_asig.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+
+        def refrescar_tree_asig():
+            tree_asig.delete(*tree_asig.get_children())
+            for idx, item in enumerate(asignaciones):
+                tree_asig.insert("", tk.END, iid=str(idx), values=(item["mat"], item["med_txt"], item["esp_txt"]))
+
+        refrescar_tree_asig()
+
+        ttk.Label(frame_meds, text="Médico:").grid(row=1, column=0, sticky="w", pady=3)
+        cb_mod_med = ttk.Combobox(frame_meds, values=opciones_medicos, state="readonly", width=38)
+        cb_mod_med.grid(row=1, column=1, sticky="ew", padx=(6, 0), pady=3)
+        if opciones_medicos:
+            cb_mod_med.current(0)
+
+        ttk.Label(frame_meds, text="Especialidad:").grid(row=2, column=0, sticky="w", pady=3)
+        cb_mod_esp = ttk.Combobox(frame_meds, state="readonly", width=38)
+        cb_mod_esp.grid(row=2, column=1, sticky="ew", padx=(6, 0), pady=3)
+
+        lbl_mod_esp_info = ttk.Label(frame_meds, text="", font=("Segoe UI", 8, "italic"), foreground="#4A5568")
+        lbl_mod_esp_info.grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 6))
+
+        cb_mod_med.bind(
+            "<<ComboboxSelected>>",
+            lambda _e: self._cargar_especialidades_para_combo(cb_mod_med, cb_mod_esp, lbl_mod_esp_info)
+        )
+        cb_mod_esp.bind(
+            "<<ComboboxSelected>>",
+            lambda _e: self._actualizar_label_esp_guardia(cb_mod_esp, lbl_mod_esp_info)
+        )
+        self._cargar_especialidades_para_combo(cb_mod_med, cb_mod_esp, lbl_mod_esp_info)
+
+        def obtener_par_seleccionado():
+            med_sel = cb_mod_med.get().strip()
+            esp_sel = cb_mod_esp.get().strip()
+            if not (med_sel and esp_sel):
+                messagebox.showwarning("Atención", "Selecciona un médico y una especialidad.", parent=modal)
+                return None
+            mat = self._parsear_clave_combo(med_sel)
+            id_esp = int(self._parsear_clave_combo(esp_sel))
+            esp_nombre = esp_sel.split(" - ", 1)[1].rsplit(" (", 1)[0].strip()
+            return {"mat": mat, "med_txt": med_sel, "id_esp": id_esp, "esp_txt": esp_nombre}
+
+        def agregar_medico_lista():
+            nuevo = obtener_par_seleccionado()
+            if not nuevo:
+                return
+            if any(a["mat"] == nuevo["mat"] and a["id_esp"] == nuevo["id_esp"] for a in asignaciones):
+                messagebox.showinfo("Ya Asignado", "Ese médico ya está asignado a la guardia con esa especialidad.", parent=modal)
+                return
+            asignaciones.append(nuevo)
+            refrescar_tree_asig()
+
+        def reemplazar_medico_lista():
+            nuevo = obtener_par_seleccionado()
+            if not nuevo:
+                return
+            sel = tree_asig.selection()
+            if not sel:
+                if len(asignaciones) == 1:
+                    idx = 0
+                else:
+                    messagebox.showinfo("Seleccionar Fila", "Selecciona de la tabla el médico que deseas reemplazar.", parent=modal)
+                    return
             else:
-                self.cb_guardia_especialidad.set("")
-            self.actualizar_info_especialidad_guardia()
+                idx = int(sel[0])
 
-        except Exception as e:
-            self.log_error(f"No se pudieron cargar las especialidades del médico: {traducir_error_oracle(e)}")
-        finally:
-            if conn_propia:
-                if cursor_local:
-                    cursor_local.close()
-                conn_propia.close()
+            if any(
+                i != idx and a["mat"] == nuevo["mat"] and a["id_esp"] == nuevo["id_esp"]
+                for i, a in enumerate(asignaciones)
+            ):
+                messagebox.showinfo("Duplicado", "Ese médico ya figura en otra fila con la misma especialidad.", parent=modal)
+                return
+            asignaciones[idx] = nuevo
+            refrescar_tree_asig()
 
-    def actualizar_info_especialidad_guardia(self, event=None):
-        """Muestra el estado de disponibilidad de la especialidad seleccionada."""
-        if not hasattr(self, 'lbl_guardia_esp_info'):
+        def quitar_medico_lista():
+            if len(asignaciones) <= 1:
+                messagebox.showwarning(
+                    "Regla de Negocio",
+                    "Una guardia no puede quedar sin médicos asignados.\n"
+                    "Para cambiar el único médico usa 'Reemplazar', o para darla de baja usa 'Eliminar Guardia'.",
+                    parent=modal
+                )
+                return
+            sel = tree_asig.selection()
+            if not sel:
+                messagebox.showinfo("Seleccionar Fila", "Selecciona el médico que deseas quitar de la guardia.", parent=modal)
+                return
+            del asignaciones[int(sel[0])]
+            refrescar_tree_asig()
+
+        frame_btns_med = ttk.Frame(frame_meds)
+        frame_btns_med.grid(row=4, column=0, columnspan=2, sticky="ew")
+
+        tk.Button(
+            frame_btns_med, text="➕ Agregar Médico", bg="#E2E8F0", cursor="hand2", command=agregar_medico_lista
+        ).pack(side=tk.LEFT, padx=(0, 6))
+        tk.Button(
+            frame_btns_med, text="🔄 Reemplazar Seleccionado", bg="#E2E8F0", cursor="hand2", command=reemplazar_medico_lista
+        ).pack(side=tk.LEFT, padx=(0, 6))
+        tk.Button(
+            frame_btns_med, text="➖ Quitar Seleccionado", bg="#FED7D7", cursor="hand2", command=quitar_medico_lista
+        ).pack(side=tk.LEFT)
+
+        def guardar_modificacion():
+            fecha_nueva = entry_fecha.get().strip()
+            turno_nuevo = cb_turno.get().strip().upper()
+            if not (fecha_nueva and turno_nuevo):
+                messagebox.showwarning("Campos Incompletos", "Fecha y turno son obligatorios.", parent=modal)
+                return
+            if len(asignaciones) < 1:
+                messagebox.showerror(
+                    "Operación Prohibida",
+                    "Una guardia no puede quedar sin médicos asignados. Asigna al menos un médico.",
+                    parent=modal
+                )
+                return
+
+            fmt = 'YYYY-MM-DD' if '-' in fecha_nueva else 'DD/MM/YYYY'
+            nuevo_set = {(a["mat"], a["id_esp"]) for a in asignaciones}
+            a_eliminar = asignaciones_originales - nuevo_set
+            a_insertar = nuevo_set - asignaciones_originales
+
+            conn_save = None
+            cur_save = None
+            try:
+                conn_save = obtener_conexion()
+                cur_save = conn_save.cursor()
+
+                cur_save.execute(f"""
+                    UPDATE GUARDIA
+                    SET fecha = TO_DATE(:1, '{fmt}'), turno = :2
+                    WHERE id_guardia = :3
+                """, [fecha_nueva, turno_nuevo, id_guardia])
+
+                for mat_del, esp_del in a_eliminar:
+                    cur_save.execute("""
+                        DELETE FROM CUBIERTA_POR
+                        WHERE id_guardia = :1 AND numero_de_matricula = :2 AND id_especialidad = :3
+                    """, [id_guardia, mat_del, esp_del])
+
+                for mat_ins, esp_ins in a_insertar:
+                    cur_save.execute("""
+                        INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia)
+                        VALUES (:1, :2, :3)
+                    """, [mat_ins, esp_ins, id_guardia])
+
+                cur_save.execute("SELECT COUNT(*) FROM CUBIERTA_POR WHERE id_guardia = :1", [id_guardia])
+                if cur_save.fetchone()[0] < 1:
+                    raise Exception("Una guardia no puede quedar sin médicos asignados.")
+
+                conn_save.commit()
+                msg = f"Guardia #{id_guardia} modificada con éxito ({turno_nuevo} del {fecha_nueva})."
+                self.log_exito(msg)
+                messagebox.showinfo("Modificación Exitosa", msg, parent=modal)
+                modal.destroy()
+                self.refrescar_panel_guardias()
+            except Exception as e:
+                if conn_save:
+                    conn_save.rollback()
+                self.log_error(f"Error al modificar guardia #{id_guardia} (ROLLBACK aplicado):\n{traducir_error_oracle(e)}")
+                messagebox.showerror("Error al Modificar Guardia", traducir_error_oracle(e), parent=modal)
+            finally:
+                if cur_save:
+                    cur_save.close()
+                if conn_save:
+                    conn_save.close()
+
+        frame_acciones = ttk.Frame(cont)
+        frame_acciones.pack(fill=tk.X)
+
+        tk.Button(
+            frame_acciones,
+            text="💾 Guardar Cambios",
+            bg="#276749",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="groove",
+            cursor="hand2",
+            command=guardar_modificacion
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+
+        tk.Button(
+            frame_acciones,
+            text="Cancelar",
+            bg="#E2E8F0",
+            cursor="hand2",
+            command=modal.destroy
+        ).pack(side=tk.RIGHT)
+
+    def accion_eliminar_guardia(self):
+        """Da de baja la guardia seleccionada (elimina GUARDIA y en cascada CUBIERTA_POR)."""
+        seleccion = self.tabla_guardias.selection()
+        if not seleccion:
+            messagebox.showinfo("Seleccionar Guardia", "Por favor selecciona una guardia de la lista para eliminar.")
             return
 
-        esp_sel = self.cb_guardia_especialidad.get().strip()
-        esp_up = esp_sel.upper()
-        if not esp_sel:
-            self.lbl_guardia_esp_info.config(text="", foreground="#4A5568")
-        elif "(DISP: SI)" in esp_up:
-            self.lbl_guardia_esp_info.config(
-                text="✅ Médico dispuesto a cubrir esta especialidad.",
-                foreground="#276749"
-            )
-        elif "(DISP: NO)" in esp_up:
-            self.lbl_guardia_esp_info.config(
-                text="⚠️ Figura NO dispuesto en TIENE para esta especialidad.",
-                foreground="#C53030"
-            )
-        else:
-            self.lbl_guardia_esp_info.config(
-                text="⚠️ Especialidad sin registrar en TIENE para este médico.",
-                foreground="#C53030"
-            )
-
-    def accion_asignar_guardia_medico(self):
-        """Asigna una guardia sin asignar a un médico y especialidad en CUBIERTA_POR."""
-        guardia_sel = self.cb_guardia_sin_asignar.get().strip()
-        med_sel = self.cb_guardia_medico.get().strip()
-        esp_sel = self.cb_guardia_especialidad.get().strip()
-
-        if not (guardia_sel and med_sel and esp_sel):
-            messagebox.showwarning(
-                "Campos Incompletos",
-                "Por favor selecciona una guardia sin asignar, un médico y una especialidad."
-            )
+        valores = self.tabla_guardias.item(seleccion[0], "values")
+        if not valores or len(valores) < 4:
             return
+        id_guardia, fecha, turno, medicos = int(valores[0]), valores[1], valores[2], valores[3]
 
-        try:
-            id_guardia = int(guardia_sel.split(" - ", 1)[0].strip())
-            matricula = med_sel.split(" - ", 1)[0].strip()
-            id_especialidad = int(esp_sel.split(" - ", 1)[0].strip())
-        except ValueError:
-            messagebox.showerror("Dato Inválido", "Los identificadores seleccionados no tienen un formato válido.")
+        confirmar = messagebox.askyesno(
+            "Confirmar Baja de Guardia",
+            f"¿Deseas eliminar definitivamente la Guardia #{id_guardia}?\n\n"
+            f"• Fecha: {fecha}\n"
+            f"• Turno: {turno}\n"
+            f"• Médicos asignados: {medicos}\n\n"
+            "Esta acción dará de baja la guardia y sus asignaciones en CUBIERTA_POR."
+        )
+        if not confirmar:
             return
 
         conn = None
@@ -2566,22 +2856,20 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia)
-                VALUES (:1, :2, :3)
-            """, [matricula, id_especialidad, id_guardia])
+            cursor.execute("DELETE FROM GUARDIA WHERE id_guardia = :1", [id_guardia])
+            if cursor.rowcount == 0:
+                raise Exception(f"No se encontró la guardia #{id_guardia} en la base de datos.")
             conn.commit()
 
-            msg = f"Guardia #{id_guardia} asignada con éxito al médico '{med_sel}'."
+            msg = f"Guardia #{id_guardia} ({turno} del {fecha}) eliminada correctamente."
             self.log_exito(msg)
-            messagebox.showinfo("Asignación Exitosa", msg)
+            messagebox.showinfo("Guardia Eliminada", msg)
             self.refrescar_panel_guardias()
-
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al asignar guardia:\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error al Asignar Guardia", traducir_error_oracle(e))
+            self.log_error(f"Error al eliminar guardia #{id_guardia}:\n{traducir_error_oracle(e)}")
+            messagebox.showerror("Error al Eliminar Guardia", traducir_error_oracle(e))
         finally:
             if cursor:
                 cursor.close()
