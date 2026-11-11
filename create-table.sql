@@ -398,27 +398,7 @@ BEGIN
     INSERT INTO AUDITORIA_GUARDIAS (usuario_db, fecha_operacion, tipo_operacion, numero_de_matricula, id_guardia)
     VALUES (USER, SYSTIMESTAMP, v_operacion, v_matricula, v_id_guardia);
 END;
-/
--- ME PARECE QUE ESTE TRIGGER NO VA:
--- DROP TRIGGER trg_validar_rol_guardia;
--- CREATE OR REPLACE TRIGGER trg_validar_rol_guardia
--- BEFORE INSERT OR UPDATE ON CUBIERTA_POR
--- FOR EACH ROW
--- DECLARE
---     v_rol VARCHAR2(20);
--- BEGIN
---     SELECT p.rol INTO v_rol
---     FROM MEDICO m
---     JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
---     WHERE m.numero_de_matricula = :NEW.numero_de_matricula;
---     IF v_rol IS NOT NULL AND UPPER(v_rol) = 'PACIENTE' THEN
---         RAISE_APPLICATION_ERROR(-20006, 'Error: No se puede asignar una guardia a una persona registrada con el rol de PACIENTE.');
---     END IF;
--- EXCEPTION
---     WHEN NO_DATA_FOUND THEN
---         RAISE_APPLICATION_ERROR(-20007, 'Error: No se encontró la información personal del médico.');
--- END;
--- /
+
 
 CREATE OR REPLACE TRIGGER trg_evitar_autoatencion
 BEFORE INSERT OR UPDATE ON INTERNACION
