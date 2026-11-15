@@ -447,3 +447,53 @@ BEGIN
     END IF;
 END;
 /
+
+CREATE OR REPLACE TRIGGER trg_comentario_ronda
+BEFORE INSERT OR UPDATE ON COMENTARIO
+FOR EACH ROW
+DECLARE
+    v_id_ronda NUMBER(7);
+    v_id_habitacion NUMBER(7);
+    v_pertenece NUMBER;
+    v_fecha_fin DATE;
+BEGIN
+    -- 1. Validar que la internación no esté finalizada
+    SELECT fecha_fin INTO v_fecha_fin
+    FROM INTERNACION
+    WHERE id_internacion = :NEW.id_internacion;
+
+    IF v_fecha_fin IS NOT NULL THEN
+        RAISE_APPLICATION_ERROR(-20012, 'Regla de negocio: No se pueden agregar comentarios a una internación finalizada (con alta médica).');
+    END IF;
+
+    -- 2. Obtener la ronda del recorrido
+    SELECT id_ronda INTO v_id_ronda
+    FROM RECORRIDO
+    WHERE id_recorrido = :NEW.id_recorrido;
+
+    -- 3. Obtener la habitación actual del paciente internado (última registrada en POSEE)
+    BEGIN
+        SELECT id_habitacion INTO v_id_habitacion
+        FROM (
+            SELECT id_habitacion
+            FROM POSEE
+            WHERE id_internacion = :NEW.id_internacion
+            ORDER BY fechaHora DESC
+        )
+        WHERE ROWNUM = 1;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20013, 'Regla de negocio: La internación no tiene una habitación asignada en POSEE.');
+    END;
+
+    -- 4. Verificar si la habitación pertenece a la ronda del recorrido (COMPUESTA_POR)
+    SELECT COUNT(*) INTO v_pertenece
+    FROM COMPUESTA_POR
+    WHERE id_ronda = v_id_ronda
+      AND id_habitacion = v_id_habitacion;
+
+    IF v_pertenece = 0 THEN
+        RAISE_APPLICATION_ERROR(-20014, 'Regla de negocio: Solo se pueden hacer comentarios de internaciones cuyas habitaciones estén en su ronda.');
+    END IF;
+END;
+/

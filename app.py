@@ -150,6 +150,25 @@ def traducir_error_oracle(error, contexto=None):
             "Por regla del hospital, no se pueden registrar internaciones con fecha futura.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
+    if "20012" in mensaje_mayus or "INTERNACIÓN FINALIZADA" in mensaje_mayus or "INTERNACION FINALIZADA" in mensaje_mayus:
+        return (
+            "❌ REGLA DE NEGOCIO VIOLADA: INTERNACIÓN FINALIZADA (Trigger trg_comentario_ronda):\n"
+            "Explicación humana: No se pueden agregar comentarios ni evoluciones médicas a una internación que ya ha sido finalizada con alta médica.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "20013" in mensaje_mayus or "SIN HABITACIÓN" in mensaje_mayus or "SIN HABITACION" in mensaje_mayus:
+        return (
+            "❌ REGLA DE NEGOCIO VIOLADA: PACIENTE SIN HABITACIÓN (Trigger trg_comentario_ronda):\n"
+            "Explicación humana: La internación indicada no cuenta con un registro de habitación y cama asignada en POSEE.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "20014" in mensaje_mayus or "ESTÉN EN SU RONDA" in mensaje_mayus or "ESTEN EN SU RONDA" in mensaje_mayus or "RONDA DEL RECORRIDO" in mensaje_mayus:
+        return (
+            "❌ REGLA DE NEGOCIO VIOLADA: HABITACIÓN FUERA DE LA RONDA (Trigger trg_comentario_ronda):\n"
+            "Explicación humana: La habitación actual del paciente no forma parte de la ronda asignada a este recorrido médico.\n"
+            "Por regla hospitalaria, solo se pueden registrar comentarios de internaciones cuyas habitaciones estén comprendidas en la ronda del recorrido.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
     if "20001" in mensaje_mayus:
         return (
             "❌ FECHA DE CAMA ANTERIOR A INTERNACIÓN (Trigger trg_posee_fecha):\n"
@@ -384,6 +403,30 @@ def traducir_error_oracle(error, contexto=None):
         return (
             "❌ GUARDIA NO ENCONTRADA:\n"
             "Explicación humana: La guardia seleccionada no existe en la base de datos.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "FK_RECORRIDO_RONDA" in mensaje_mayus:
+        return (
+            "❌ RONDA NO ENCONTRADA (Foreign Key):\n"
+            "Explicación humana: La ronda seleccionada para el recorrido no existe en la base de datos.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "FK_RECORRIDO_MEDICO" in mensaje_mayus:
+        return (
+            "❌ MÉDICO DEL RECORRIDO NO ENCONTRADO (Foreign Key):\n"
+            "Explicación humana: La matrícula médica asignada al recorrido no existe en la base de datos.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "FK_COMENTARIO_INTERNACION" in mensaje_mayus:
+        return (
+            "❌ INTERNACIÓN NO ENCONTRADA (Foreign Key):\n"
+            "Explicación humana: La internación indicada para el comentario no existe en la base de datos.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
+    if "FK_COMENTARIO_RECORRIDO" in mensaje_mayus:
+        return (
+            "❌ RECORRIDO NO ENCONTRADO (Foreign Key):\n"
+            "Explicación humana: El recorrido médico indicado para el comentario no existe en la base de datos.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
 
@@ -763,23 +806,51 @@ class HospitalApp(tk.Tk):
         btn_finalizar_internacion.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(0, 2))
 
         # 3. Consultar Comentarios (Stored Procedure)
-        frame_sp_comentarios = ttk.LabelFrame(columna_izq, text=" 💬 Visitas Médicas (Stored Procedure) ", padding=8)
+        frame_sp_comentarios = ttk.LabelFrame(columna_izq, text=" 💬 Visitas Médicas y Recorridos (SP) ", padding=8)
         frame_sp_comentarios.pack(fill=tk.X)
 
-        ttk.Label(frame_sp_comentarios, text="ID Internación:").grid(row=0, column=0, sticky="w", pady=2)
-        self.txt_id_int_comentario = ttk.Entry(frame_sp_comentarios, width=10)
+        frame_sp_row0 = ttk.Frame(frame_sp_comentarios)
+        frame_sp_row0.pack(fill=tk.X, pady=(0, 4))
+
+        ttk.Label(frame_sp_row0, text="ID Internación:").pack(side=tk.LEFT, padx=(0, 4))
+        self.txt_id_int_comentario = ttk.Entry(frame_sp_row0, width=8)
         self.txt_id_int_comentario.insert(0, "1")
-        self.txt_id_int_comentario.grid(row=0, column=1, pady=2, padx=(0, 8), sticky="w")
+        self.txt_id_int_comentario.pack(side=tk.LEFT, padx=(0, 8))
 
         btn_ver_sp_comentarios = tk.Button(
-            frame_sp_comentarios,
+            frame_sp_row0,
             text="💬 Ver Visitas Médicas (SP)",
             bg="#E2E8F0",
             cursor="hand2",
             font=("Segoe UI", 9, "bold"),
             command=self.accion_consultar_comentarios_sp
         )
-        btn_ver_sp_comentarios.grid(row=0, column=2, pady=2, sticky="ew")
+        btn_ver_sp_comentarios.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+
+        frame_sp_row1 = ttk.Frame(frame_sp_comentarios)
+        frame_sp_row1.pack(fill=tk.X, pady=(2, 0))
+
+        btn_ir_rec = tk.Button(
+            frame_sp_row1,
+            text="🔄 Cargar Recorrido",
+            bg="#EBF8FF",
+            fg="#2B6CB0",
+            cursor="hand2",
+            font=("Segoe UI", 8, "bold"),
+            command=self.ir_a_tab_recorrido
+        )
+        btn_ir_rec.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+
+        btn_ir_com = tk.Button(
+            frame_sp_row1,
+            text="📝 Cargar Comentario",
+            bg="#F0FFF4",
+            fg="#276749",
+            cursor="hand2",
+            font=("Segoe UI", 8, "bold"),
+            command=self.ir_a_tab_comentario
+        )
+        btn_ir_com.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
         # Panel derecho: Camas libres (Resumen por Sector + Detalle)
         frame_der = ttk.Frame(self.tab_transaccion)
@@ -1047,6 +1118,8 @@ class HospitalApp(tk.Tk):
         finally:
             if conn:
                 conn.close()
+            if hasattr(self, 'actualizar_combo_internaciones_activas_com'):
+                self.actualizar_combo_internaciones_activas_com()
 
     def accion_consultar_cama_actual(self, event=None):
         if not hasattr(self, 'txt_traslado_id_int'):
@@ -1505,8 +1578,26 @@ class HospitalApp(tk.Tk):
         self.notebook_altas.add(self.tab_guardia, text=" 🛡️ Guardias ")
         self.construir_subtab_guardia(self.tab_guardia)
 
+        self.tab_recorrido = ttk.Frame(self.notebook_altas, padding=12)
+        self.notebook_altas.add(self.tab_recorrido, text=" 🔄 Recorridos ")
+        self.construir_subtab_recorrido(self.tab_recorrido)
+
+        self.tab_comentario = ttk.Frame(self.notebook_altas, padding=12)
+        self.notebook_altas.add(self.tab_comentario, text=" 💬 Comentarios ")
+        self.construir_subtab_comentario(self.tab_comentario)
+
         self._pestana_altas_anterior = self.notebook_altas.select()
         self.notebook_altas.bind("<<NotebookTabChanged>>", self.on_cambio_pestana_altas)
+
+    def ir_a_tab_recorrido(self):
+        self.notebook.select(self.tab_altas)
+        if hasattr(self, 'tab_recorrido'):
+            self.notebook_altas.select(self.tab_recorrido)
+
+    def ir_a_tab_comentario(self):
+        self.notebook.select(self.tab_altas)
+        if hasattr(self, 'tab_comentario'):
+            self.notebook_altas.select(self.tab_comentario)
 
     def on_cambio_pestana_altas(self, event=None):
         if not getattr(self, '_app_iniciada', False):
@@ -1519,6 +1610,10 @@ class HospitalApp(tk.Tk):
                     if self._pestana_altas_anterior and self._pestana_altas_anterior != str(self.tab_guardia):
                         self.notebook_altas.select(self._pestana_altas_anterior)
                     return
+        elif hasattr(self, 'tab_recorrido') and pestana_actual == str(self.tab_recorrido):
+            self.refrescar_panel_recorridos()
+        elif hasattr(self, 'tab_comentario') and pestana_actual == str(self.tab_comentario):
+            self.refrescar_panel_comentarios()
         self._pestana_altas_anterior = pestana_actual
 
     # 1. Subtab Paciente
@@ -3205,6 +3300,923 @@ class HospitalApp(tk.Tk):
         finally:
             if cursor:
                 cursor.close()
+            if conn:
+                conn.close()
+
+    # --------------------------------------------------------------------------
+    # MÉTODOS AUXILIARES: RECORRIDOS Y RONDAS
+    # --------------------------------------------------------------------------
+    def _obtener_opciones_medicos(self, cursor):
+        cursor.execute("""
+            SELECT m.numero_de_matricula, p.apellido, p.nombre
+            FROM MEDICO m
+            JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
+            ORDER BY p.apellido, p.nombre
+        """)
+        return [f"{m[0]} - {m[1]}, {m[2]}" for m in cursor.fetchall()]
+
+    def _obtener_opciones_rondas(self, cursor):
+        cursor.execute("""
+            SELECT id_ronda, turno, dia_semana
+            FROM RONDA
+            ORDER BY id_ronda
+        """)
+        return [f"Ronda #{r[0]} | {r[2]} (Turno {r[1]})" for r in cursor.fetchall()]
+
+    def _parsear_fecha_recorrido(self, fecha_str):
+        for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(fecha_str, fmt)
+            except ValueError:
+                pass
+        return None
+
+    # ==========================================================================
+    # SUBTAB: RECORRIDOS (Carga de Datos)
+    # ==========================================================================
+    def construir_subtab_recorrido(self, parent):
+        columna_izq = ttk.Frame(parent)
+        columna_izq.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+
+        frame_form = ttk.LabelFrame(columna_izq, text=" 🔄 Registrar Nuevo Recorrido ", padding=12)
+        frame_form.pack(fill=tk.X, pady=(0, 10))
+
+        # Médico
+        ttk.Label(frame_form, text="Médico a Cargo:", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=(2, 2))
+        self.rec_cb_medico = ttk.Combobox(frame_form, state="readonly", width=34)
+        self.rec_cb_medico.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+
+        # Ronda
+        ttk.Label(frame_form, text="Ronda Hospitalaria:", font=("Segoe UI", 9, "bold")).grid(row=2, column=0, sticky="w", pady=(2, 2))
+        self.rec_cb_ronda = ttk.Combobox(frame_form, state="readonly", width=34)
+        self.rec_cb_ronda.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+
+        # Fecha y Hora
+        ttk.Label(frame_form, text="Fecha y Hora del Recorrido:", font=("Segoe UI", 9, "bold")).grid(row=4, column=0, sticky="w", pady=(2, 2))
+        self.rec_txt_fecha = ttk.Entry(frame_form, width=34)
+        self.rec_txt_fecha.insert(0, datetime.now().strftime("%d/%m/%Y %H:%M"))
+        self.rec_txt_fecha.grid(row=5, column=0, sticky="ew", pady=(0, 2))
+        ttk.Label(frame_form, text="Formato: DD/MM/AAAA HH:MI", font=("Segoe UI", 8, "italic"), foreground="#4A5568").grid(row=6, column=0, sticky="w", pady=(0, 10))
+
+        btn_guardar_rec = tk.Button(
+            frame_form,
+            text="🔄 Registrar Recorrido (INSERT)",
+            bg="#2B6CB0",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="groove",
+            cursor="hand2",
+            command=self.accion_insertar_recorrido
+        )
+        btn_guardar_rec.grid(row=7, column=0, sticky="ew", pady=(4, 6))
+
+        btn_ir_comentarios = tk.Button(
+            frame_form,
+            text="💬 Ir a Agregar Comentarios ➔",
+            bg="#E2E8F0",
+            font=("Segoe UI", 9),
+            cursor="hand2",
+            command=self.ir_a_tab_comentario
+        )
+        btn_ir_comentarios.grid(row=8, column=0, sticky="ew", pady=(0, 2))
+
+        # Columna derecha: Listado de Recorridos
+        columna_der = ttk.Frame(parent)
+        columna_der.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        frame_tabla = ttk.LabelFrame(columna_der, text=" 📋 Listado de Recorridos Realizados ", padding=10)
+        frame_tabla.pack(fill=tk.BOTH, expand=True)
+
+        cols = ("id_recorrido", "fecha", "matricula", "medico", "id_ronda", "turno", "dia", "cant_com")
+        self.tabla_recorridos = ttk.Treeview(frame_tabla, columns=cols, show="headings", height=14)
+        self.tabla_recorridos.heading("id_recorrido", text="ID Recorrido")
+        self.tabla_recorridos.heading("fecha", text="Fecha / Hora")
+        self.tabla_recorridos.heading("matricula", text="Matrícula")
+        self.tabla_recorridos.heading("medico", text="Médico")
+        self.tabla_recorridos.heading("id_ronda", text="Ronda")
+        self.tabla_recorridos.heading("turno", text="Turno")
+        self.tabla_recorridos.heading("dia", text="Día")
+        self.tabla_recorridos.heading("cant_com", text="Comentarios")
+
+        self.tabla_recorridos.column("id_recorrido", width=85, anchor="center")
+        self.tabla_recorridos.column("fecha", width=125, anchor="center")
+        self.tabla_recorridos.column("matricula", width=80, anchor="center")
+        self.tabla_recorridos.column("medico", width=160)
+        self.tabla_recorridos.column("id_ronda", width=65, anchor="center")
+        self.tabla_recorridos.column("turno", width=60, anchor="center")
+        self.tabla_recorridos.column("dia", width=90, anchor="center")
+        self.tabla_recorridos.column("cant_com", width=85, anchor="center")
+
+        scroll_y = ttk.Scrollbar(frame_tabla, orient=tk.VERTICAL, command=self.tabla_recorridos.yview)
+        self.tabla_recorridos.configure(yscrollcommand=scroll_y.set)
+        self.tabla_recorridos.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+
+        frame_btns_tabla = ttk.Frame(columna_der)
+        frame_btns_tabla.pack(fill=tk.X, pady=(6, 0))
+
+        tk.Button(
+            frame_btns_tabla,
+            text="🔄 Actualizar Lista",
+            bg="#E2E8F0",
+            cursor="hand2",
+            font=("Segoe UI", 9),
+            command=self.cargar_lista_recorridos
+        ).pack(side=tk.LEFT, padx=(0, 6))
+
+        
+    def accion_insertar_recorrido(self):
+        med_sel = self.rec_cb_medico.get().strip()
+        ronda_sel = self.rec_cb_ronda.get().strip()
+        fecha_str = self.rec_txt_fecha.get().strip()
+
+        if not med_sel or " - " not in med_sel:
+            messagebox.showwarning("Médico Requerido", "Por favor selecciona un médico de la lista.")
+            return
+        if not ronda_sel or "Ronda #" not in ronda_sel:
+            messagebox.showwarning("Ronda Requerida", "Por favor selecciona una ronda de la lista.")
+            return
+        if not fecha_str:
+            messagebox.showwarning("Fecha Requerida", "Por favor ingresa la fecha y hora del recorrido.")
+            return
+
+        fecha_dt = self._parsear_fecha_recorrido(fecha_str)
+        if fecha_dt is None:
+            messagebox.showerror("Fecha Inválida", f"El formato de fecha '{fecha_str}' no es válido.\nFormatos soportados: DD/MM/AAAA HH:MI o AAAA-MM-DD HH:MI")
+            return
+
+        matricula = med_sel.split(" - ")[0].strip()
+        try:
+            id_ronda = int(ronda_sel.split("|")[0].replace("Ronda #", "").strip())
+        except ValueError:
+            messagebox.showerror("Error", "No se pudo interpretar el identificador de la ronda.")
+            return
+
+        conn = None
+        cursor = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            id_rec_var = cursor.var(oracledb.NUMBER)
+            cursor.execute("""
+                INSERT INTO RECORRIDO (fecha, id_ronda, numero_de_matricula)
+                VALUES (:1, :2, :3)
+                RETURNING id_recorrido INTO :4
+            """, [fecha_dt, id_ronda, matricula, id_rec_var])
+
+            nuevo_id = int(id_rec_var.getvalue()[0])
+            conn.commit()
+
+            msg = f"Recorrido #{nuevo_id} registrado con éxito para el Dr./Dra. {med_sel} en Ronda #{id_ronda} ({fecha_str})."
+            self.log_exito(msg)
+            messagebox.showinfo("Recorrido Registrado", msg)
+
+            self.rec_txt_fecha.delete(0, tk.END)
+            self.rec_txt_fecha.insert(0, datetime.now().strftime("%d/%m/%Y %H:%M"))
+            self.cargar_lista_recorridos()
+
+            if hasattr(self, 'com_cb_medico') and self.com_cb_medico.get() == med_sel:
+                self.cargar_recorridos_de_medico_com(matricula)
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            self.log_error(f"Error al registrar recorrido:\n{traducir_error_oracle(e)}")
+            messagebox.showerror("Error al Registrar Recorrido", traducir_error_oracle(e))
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    def cargar_lista_recorridos(self):
+        if not hasattr(self, 'tabla_recorridos'):
+            return
+        for item in self.tabla_recorridos.get_children():
+            self.tabla_recorridos.delete(item)
+
+        conn = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT r.id_recorrido,
+                       TO_CHAR(r.fecha, 'DD/MM/YYYY HH24:MI') as fecha_fmt,
+                       r.numero_de_matricula,
+                       p.apellido || ', ' || p.nombre as medico,
+                       r.id_ronda,
+                       COALESCE(TO_CHAR(ro.turno), 'N/A') as turno,
+                       COALESCE(ro.dia_semana, 'N/A') as dia,
+                       (SELECT COUNT(*) FROM COMENTARIO c WHERE c.id_recorrido = r.id_recorrido) as cant_com
+                FROM RECORRIDO r
+                JOIN MEDICO m ON r.numero_de_matricula = m.numero_de_matricula
+                JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
+                LEFT JOIN RONDA ro ON r.id_ronda = ro.id_ronda
+                ORDER BY r.fecha DESC, r.id_recorrido DESC
+            """)
+            for row in cursor.fetchall():
+                self.tabla_recorridos.insert("", tk.END, values=row)
+            cursor.close()
+        except Exception as e:
+            self.log_error(f"Error al cargar listado de recorridos: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+    def refrescar_panel_recorridos(self):
+        conn = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            medicos = self._obtener_opciones_medicos(cursor)
+            rondas = self._obtener_opciones_rondas(cursor)
+            cursor.close()
+
+            if hasattr(self, 'rec_cb_medico'):
+                self.rec_cb_medico['values'] = medicos
+                if medicos and not self.rec_cb_medico.get():
+                    self.rec_cb_medico.set(medicos[0])
+
+            if hasattr(self, 'rec_cb_ronda'):
+                self.rec_cb_ronda['values'] = rondas
+                if rondas and not self.rec_cb_ronda.get():
+                    self.rec_cb_ronda.set(rondas[0])
+
+            self.cargar_lista_recorridos()
+        except Exception as e:
+            self.log_error(f"Error al refrescar panel de recorridos: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+    def accion_eliminar_recorrido(self):
+        sel = self.tabla_recorridos.selection()
+        if not sel:
+            messagebox.showinfo("Selección", "Por favor selecciona un recorrido de la tabla para eliminar.")
+            return
+        vals = self.tabla_recorridos.item(sel[0], "values")
+        id_rec = int(vals[0])
+        fecha = vals[1]
+        medico = vals[3]
+        cant_com = int(vals[7])
+
+        if cant_com > 0:
+            messagebox.showerror(
+                "No se puede eliminar",
+                f"El recorrido #{id_rec} tiene {cant_com} comentario(s) médico(s) asociado(s).\n\n"
+                "Por integridad referencial (FK_COMENTARIO_RECORRIDO), debes eliminar primero los comentarios en la solapa 'Comentarios'."
+            )
+            return
+
+        if not messagebox.askyesno("Confirmar Eliminación", f"¿Estás seguro de eliminar el Recorrido #{id_rec} ({fecha} - {medico})?"):
+            return
+
+        conn = None
+        cursor = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM RECORRIDO WHERE id_recorrido = :1", [id_rec])
+            conn.commit()
+            self.log_exito(f"Recorrido #{id_rec} eliminado exitosamente.")
+            messagebox.showinfo("Éxito", f"Recorrido #{id_rec} eliminado correctamente.")
+            self.cargar_lista_recorridos()
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            self.log_error(f"Error al eliminar recorrido #{id_rec}:\n{traducir_error_oracle(e)}")
+            messagebox.showerror("Error al Eliminar Recorrido", traducir_error_oracle(e))
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    # ==========================================================================
+    # SUBTAB: COMENTARIOS (Carga de Datos)
+    # ==========================================================================
+    def construir_subtab_comentario(self, parent):
+        columna_izq = ttk.Frame(parent)
+        columna_izq.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+
+        frame_form = ttk.LabelFrame(columna_izq, text=" 📝 Registro de Comentarios / Evoluciones Médicas ", padding=12)
+        frame_form.pack(fill=tk.X, pady=(0, 8))
+
+        # Paso 1: Seleccionar Médico
+        ttk.Label(frame_form, text="1. Seleccionar Médico:", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=(2, 2))
+        self.com_cb_medico = ttk.Combobox(frame_form, state="readonly", width=42)
+        self.com_cb_medico.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        self.com_cb_medico.bind("<<ComboboxSelected>>", self.on_com_medico_seleccionado)
+
+        # Paso 2: Seleccionar Recorrido del Médico
+        ttk.Label(frame_form, text="2. Seleccionar Recorrido del Médico:", font=("Segoe UI", 9, "bold")).grid(row=2, column=0, sticky="w", pady=(2, 2))
+        self.com_cb_recorrido = ttk.Combobox(frame_form, state="readonly", width=42)
+        self.com_cb_recorrido.grid(row=3, column=0, sticky="ew", pady=(0, 2))
+        self.com_cb_recorrido.bind("<<ComboboxSelected>>", self.on_com_recorrido_seleccionado)
+
+        self.lbl_aviso_recorridos_med = ttk.Label(
+            frame_form,
+            text="Selecciona un médico arriba para ver sus recorridos.",
+            font=("Segoe UI", 8, "italic"),
+            foreground="#4A5568"
+        )
+        self.lbl_aviso_recorridos_med.grid(row=4, column=0, sticky="w", pady=(0, 8))
+
+        # Paso 3: Seleccionar Internación (SOLO NO FINALIZADAS)
+        # Paso 3: Seleccionar Internación (SOLO de habitaciones en la ronda del recorrido)
+        frame_lbl_int = ttk.Frame(frame_form)
+        frame_lbl_int.grid(row=5, column=0, sticky="ew", pady=(2, 2))
+        ttk.Label(frame_lbl_int, text="3. Internación en Ronda del Recorrido:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
+        btn_refrescar_ints = tk.Button(
+            frame_lbl_int,
+            text="🔄",
+            bg="#E2E8F0",
+            font=("Segoe UI", 8),
+            cursor="hand2",
+            command=self.on_com_recorrido_seleccionado
+        )
+        btn_refrescar_ints.pack(side=tk.RIGHT)
+
+        self.com_cb_internacion = ttk.Combobox(frame_form, state="readonly", width=42)
+        self.com_cb_internacion.grid(row=6, column=0, sticky="ew", pady=(0, 2))
+
+        self.lbl_info_ronda_int = ttk.Label(
+            frame_form,
+            text="🟢 Solo internaciones activas cuyas habitaciones pertenezcan a la ronda del recorrido",
+            font=("Segoe UI", 8, "italic"),
+            foreground="#276749",
+            wraplength=310
+        )
+        self.lbl_info_ronda_int.grid(row=7, column=0, sticky="w", pady=(0, 8))
+
+        # Paso 4: Contenido del Comentario (máx 200 car.)
+        ttk.Label(frame_form, text="4. Comentario / Evolución Clínica (máx 200 car.):", font=("Segoe UI", 9, "bold")).grid(row=8, column=0, sticky="w", pady=(2, 2))
+        self.com_txt_contenido = scrolledtext.ScrolledText(frame_form, height=4, width=40, font=("Segoe UI", 9), wrap=tk.WORD)
+        self.com_txt_contenido.grid(row=9, column=0, sticky="ew", pady=(0, 2))
+        self.com_txt_contenido.bind("<KeyRelease>", self.actualizar_contador_comentario)
+
+        self.com_lbl_contador = ttk.Label(frame_form, text="Caracteres: 0 / 200", font=("Segoe UI", 8, "italic"), foreground="#4A5568")
+        self.com_lbl_contador.grid(row=10, column=0, sticky="w", pady=(0, 8))
+
+        # Botón Guardar Comentario
+        btn_guardar_com = tk.Button(
+            frame_form,
+            text="📝 Registrar Comentario (INSERT)",
+            bg="#276749",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="groove",
+            cursor="hand2",
+            command=self.accion_insertar_comentario_desde_tab
+        )
+        btn_guardar_com.grid(row=11, column=0, sticky="ew", pady=(4, 4))
+
+        # Panel Derecho: Visualización
+        columna_der = ttk.Frame(parent)
+        columna_der.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        frame_recs_med = ttk.LabelFrame(columna_der, text=" 🔄 Recorridos del Médico Seleccionado (Clic para seleccionar) ", padding=8)
+        frame_recs_med.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+
+        cols_rec = ("id_recorrido", "fecha", "ronda", "dia", "turno", "cant_comentarios")
+        self.com_tabla_recorridos_med = ttk.Treeview(frame_recs_med, columns=cols_rec, show="headings", height=6)
+        self.com_tabla_recorridos_med.heading("id_recorrido", text="ID Recorrido")
+        self.com_tabla_recorridos_med.heading("fecha", text="Fecha / Hora")
+        self.com_tabla_recorridos_med.heading("ronda", text="Ronda")
+        self.com_tabla_recorridos_med.heading("dia", text="Día")
+        self.com_tabla_recorridos_med.heading("turno", text="Turno")
+        self.com_tabla_recorridos_med.heading("cant_comentarios", text="Evoluciones")
+
+        self.com_tabla_recorridos_med.column("id_recorrido", width=85, anchor="center")
+        self.com_tabla_recorridos_med.column("fecha", width=120, anchor="center")
+        self.com_tabla_recorridos_med.column("ronda", width=65, anchor="center")
+        self.com_tabla_recorridos_med.column("dia", width=90, anchor="center")
+        self.com_tabla_recorridos_med.column("turno", width=60, anchor="center")
+        self.com_tabla_recorridos_med.column("cant_comentarios", width=80, anchor="center")
+
+        scroll_rec_y = ttk.Scrollbar(frame_recs_med, orient=tk.VERTICAL, command=self.com_tabla_recorridos_med.yview)
+        self.com_tabla_recorridos_med.configure(yscrollcommand=scroll_rec_y.set)
+        self.com_tabla_recorridos_med.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll_rec_y.pack(side=tk.RIGHT, fill=tk.Y)
+        self.com_tabla_recorridos_med.bind("<<TreeviewSelect>>", self.on_com_recorrido_tabla_click)
+
+        # Abajo: Comentarios del Recorrido Seleccionado
+        frame_coms = ttk.LabelFrame(columna_der, text=" 💬 Comentarios / Evoluciones Registradas en el Recorrido Seleccionado ", padding=8)
+        frame_coms.pack(fill=tk.BOTH, expand=True)
+
+        cols_com = ("id_comentario", "id_internacion", "paciente", "contenido")
+        self.com_tabla_comentarios = ttk.Treeview(frame_coms, columns=cols_com, show="headings", height=6)
+        self.com_tabla_comentarios.heading("id_comentario", text="ID Comentario")
+        self.com_tabla_comentarios.heading("id_internacion", text="ID Int.")
+        self.com_tabla_comentarios.heading("paciente", text="Paciente")
+        self.com_tabla_comentarios.heading("contenido", text="Contenido (Evolución Clínica)")
+
+        self.com_tabla_comentarios.column("id_comentario", width=90, anchor="center")
+        self.com_tabla_comentarios.column("id_internacion", width=70, anchor="center")
+        self.com_tabla_comentarios.column("paciente", width=150)
+        self.com_tabla_comentarios.column("contenido", width=300)
+
+        scroll_com_y = ttk.Scrollbar(frame_coms, orient=tk.VERTICAL, command=self.com_tabla_comentarios.yview)
+        self.com_tabla_comentarios.configure(yscrollcommand=scroll_com_y.set)
+        self.com_tabla_comentarios.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll_com_y.pack(side=tk.RIGHT, fill=tk.Y)
+        self.com_tabla_comentarios.bind("<Double-1>", self.mostrar_detalle_comentario)
+
+        frame_coms_btns = ttk.Frame(frame_coms)
+        frame_coms_btns.pack(fill=tk.X, pady=(6, 0))
+
+        tk.Button(
+            frame_coms_btns,
+            text="🔍 Ver Comentario Completo",
+            bg="#E2E8F0",
+            cursor="hand2",
+            font=("Segoe UI", 8),
+            command=self.mostrar_detalle_comentario
+        ).pack(side=tk.LEFT, padx=(0, 6))
+
+        
+    def on_com_medico_seleccionado(self, event=None):
+        med_sel = self.com_cb_medico.get().strip()
+        if not med_sel or " - " not in med_sel:
+            return
+        matricula = med_sel.split(" - ")[0].strip()
+        self.cargar_recorridos_de_medico_com(matricula)
+
+    def cargar_recorridos_de_medico_com(self, matricula):
+        if not hasattr(self, 'com_cb_recorrido') or not hasattr(self, 'com_tabla_recorridos_med'):
+            return
+        for item in self.com_tabla_recorridos_med.get_children():
+            self.com_tabla_recorridos_med.delete(item)
+        for item in self.com_tabla_comentarios.get_children():
+            self.com_tabla_comentarios.delete(item)
+
+        conn = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT r.id_recorrido,
+                       TO_CHAR(r.fecha, 'DD/MM/YYYY HH24:MI') as fecha_fmt,
+                       r.id_ronda,
+                       COALESCE(ro.dia_semana, 'N/A') as dia,
+                       COALESCE(TO_CHAR(ro.turno), 'N/A') as turno,
+                       (SELECT COUNT(*) FROM COMENTARIO c WHERE c.id_recorrido = r.id_recorrido) as cant_com
+                FROM RECORRIDO r
+                LEFT JOIN RONDA ro ON r.id_ronda = ro.id_ronda
+                WHERE r.numero_de_matricula = :1
+                ORDER BY r.fecha DESC, r.id_recorrido DESC
+            """, [matricula])
+            recorridos = cursor.fetchall()
+            cursor.close()
+
+            opciones_combo = []
+            for r in recorridos:
+                self.com_tabla_recorridos_med.insert("", tk.END, values=(r[0], r[1], r[2], r[3], r[4], r[5]))
+                opciones_combo.append(f"Recorrido #{r[0]} | Fecha: {r[1]} | Ronda #{r[2]} ({r[3]} T{r[4]})")
+
+            self.com_cb_recorrido['values'] = opciones_combo
+            if opciones_combo:
+                self.com_cb_recorrido.set(opciones_combo[0])
+                self.lbl_aviso_recorridos_med.config(
+                    text=f"✓ {len(opciones_combo)} recorrido(s) encontrado(s) para este médico.",
+                    foreground="#276749"
+                )
+                self.on_com_recorrido_seleccionado()
+            else:
+                self.com_cb_recorrido.set("(Este médico no tiene recorridos registrados)")
+                self.lbl_aviso_recorridos_med.config(
+                    text="⚠️ Este médico no tiene recorridos. Puedes registrar uno en la pestaña 'Recorridos'.",
+                    foreground="#C53030"
+                )
+        except Exception as e:
+            self.log_error(f"Error al cargar recorridos del médico {matricula}: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+    def on_com_recorrido_seleccionado(self, event=None):
+        rec_sel = self.com_cb_recorrido.get().strip()
+        if not rec_sel or not rec_sel.startswith("Recorrido #"):
+            if hasattr(self, 'com_cb_internacion'):
+                self.com_cb_internacion['values'] = []
+                self.com_cb_internacion.set("(Primero selecciona un recorrido)")
+            if hasattr(self, 'lbl_info_ronda_int'):
+                self.lbl_info_ronda_int.config(
+                    text="Selecciona un recorrido arriba para cargar las internaciones de su ronda.",
+                    foreground="#4A5568"
+                )
+            return
+        try:
+            id_rec = int(rec_sel.split("|")[0].replace("Recorrido #", "").strip())
+        except ValueError:
+            return
+        self.cargar_comentarios_de_recorrido(id_rec)
+        self.cargar_internaciones_de_recorrido(id_rec)
+
+    def on_com_recorrido_tabla_click(self, event=None):
+        sel = self.com_tabla_recorridos_med.selection()
+        if not sel:
+            return
+        vals = self.com_tabla_recorridos_med.item(sel[0], "values")
+        if not vals:
+            return
+        id_rec = int(vals[0])
+        for opc in self.com_cb_recorrido['values']:
+            if opc.startswith(f"Recorrido #{id_rec} "):
+                self.com_cb_recorrido.set(opc)
+                break
+        self.cargar_comentarios_de_recorrido(id_rec)
+        self.cargar_internaciones_de_recorrido(id_rec)
+
+    def cargar_comentarios_de_recorrido(self, id_recorrido):
+        if not hasattr(self, 'com_tabla_comentarios'):
+            return
+        for item in self.com_tabla_comentarios.get_children():
+            self.com_tabla_comentarios.delete(item)
+
+        conn = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT c.id_comentario,
+                       c.id_internacion,
+                       p.apellido || ', ' || p.nombre AS paciente,
+                       c.contenido
+                FROM COMENTARIO c
+                JOIN INTERNACION i ON c.id_internacion = i.id_internacion
+                JOIN PACIENTE pac ON i.numero_de_DNI = pac.numero_de_DNI
+                JOIN PERSONA p ON pac.numero_de_DNI = p.numero_de_DNI
+                WHERE c.id_recorrido = :1
+                ORDER BY c.id_comentario DESC
+            """, [id_recorrido])
+            for row in cursor.fetchall():
+                self.com_tabla_comentarios.insert("", tk.END, values=row)
+            cursor.close()
+        except Exception as e:
+            self.log_error(f"Error al cargar comentarios del recorrido #{id_recorrido}: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+    def cargar_internaciones_de_recorrido(self, id_recorrido):
+        """
+        Filtra y carga en el desplegable ÚNICAMENTE las internaciones activas (fecha_fin IS NULL)
+        cuyas habitaciones actuales formen parte de la ronda del recorrido seleccionado.
+        """
+        if not hasattr(self, 'com_cb_internacion'):
+            return
+
+        conn = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+
+            # 1. Obtener la ronda del recorrido
+            cursor.execute("""
+                SELECT r.id_ronda, ro.dia_semana, ro.turno
+                FROM RECORRIDO r
+                LEFT JOIN RONDA ro ON r.id_ronda = ro.id_ronda
+                WHERE r.id_recorrido = :1
+            """, [id_recorrido])
+            row_rec = cursor.fetchone()
+            if not row_rec:
+                return
+
+            id_ronda = row_rec[0]
+            dia_ronda = row_rec[1] or "N/A"
+            turno_ronda = row_rec[2] or "N/A"
+
+            # 2. Obtener lista de habitaciones que componen esta ronda
+            cursor.execute("""
+                SELECT cp.id_habitacion
+                FROM COMPUESTA_POR cp
+                WHERE cp.id_ronda = :1
+                ORDER BY cp.id_habitacion
+            """, [id_ronda])
+            habs_ronda = [r[0] for r in cursor.fetchall()]
+            habs_str = ", ".join(f"Hab #{h}" for h in habs_ronda) if habs_ronda else "Ninguna"
+
+            # 3. Consultar internaciones activas cuyas habitaciones actuales pertenezcan a esta ronda
+            cursor.execute("""
+                SELECT i.id_internacion,
+                       p.nombre,
+                       p.apellido,
+                       i.numero_de_DNI,
+                       pos.id_habitacion,
+                       pos.nro_cama,
+                       COALESCE(s.nombre, 'General') as sector,
+                       TO_CHAR(i.fecha_inicio, 'DD/MM/YYYY HH24:MI') as inicio_fmt
+                FROM INTERNACION i
+                JOIN PACIENTE pac ON i.numero_de_DNI = pac.numero_de_DNI
+                JOIN PERSONA p ON pac.numero_de_DNI = p.numero_de_DNI
+                JOIN (
+                    SELECT p1.id_internacion, p1.id_habitacion, p1.nro_cama
+                    FROM POSEE p1
+                    WHERE p1.fechaHora = (
+                        SELECT MAX(p2.fechaHora)
+                        FROM POSEE p2
+                        WHERE p2.id_internacion = p1.id_internacion
+                    )
+                ) pos ON pos.id_internacion = i.id_internacion
+                JOIN HABITACION h ON pos.id_habitacion = h.id_habitacion
+                LEFT JOIN SECTOR s ON h.id_sector = s.id_sector
+                WHERE i.fecha_fin IS NULL
+                  AND pos.id_habitacion IN (
+                      SELECT cp2.id_habitacion
+                      FROM COMPUESTA_POR cp2
+                      WHERE cp2.id_ronda = :1
+                  )
+                ORDER BY i.id_internacion DESC
+            """, [id_ronda])
+
+            filas_int = cursor.fetchall()
+            cursor.close()
+
+            opciones = [
+                f"Int #{f[0]} | Pac: {f[2]}, {f[1]} (DNI {f[3]}) | Hab: {f[4]} Cama: {f[5]} ({f[6]})"
+                for f in filas_int
+            ]
+            self.com_cb_internacion['values'] = opciones
+
+            if opciones:
+                self.com_cb_internacion.set(opciones[0])
+                if hasattr(self, 'lbl_info_ronda_int'):
+                    self.lbl_info_ronda_int.config(
+                        text=f"✓ Ronda #{id_ronda} ({dia_ronda} T{turno_ronda}) incluye: {habs_str}\n  {len(opciones)} internación(es) activa(s) en sus habitaciones.",
+                        foreground="#276749"
+                    )
+            else:
+                self.com_cb_internacion.set("(No hay internaciones activas en las habitaciones de esta ronda)")
+                if hasattr(self, 'lbl_info_ronda_int'):
+                    self.lbl_info_ronda_int.config(
+                        text=f"⚠️ Ronda #{id_ronda} cubre: {habs_str}, pero actualmente no hay pacientes internados en esas habitaciones.",
+                        foreground="#C53030"
+                    )
+
+        except Exception as e:
+            self.log_error(f"Error al cargar internaciones de la ronda para recorrido #{id_recorrido}: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+    def actualizar_combo_internaciones_activas_com(self):
+        """Redirige al filtrado por el recorrido seleccionado actualmente."""
+        self.on_com_recorrido_seleccionado()
+
+    def actualizar_contador_comentario(self, event=None):
+        if not hasattr(self, 'com_txt_contenido') or not hasattr(self, 'com_lbl_contador'):
+            return
+        texto = self.com_txt_contenido.get("1.0", tk.END).strip()
+        n = len(texto)
+        if n > 200:
+            self.com_lbl_contador.config(
+                text=f"⚠️ {n} / 200 caracteres (¡Excede el límite de 200 de Oracle!)",
+                foreground="#C53030"
+            )
+        else:
+            self.com_lbl_contador.config(
+                text=f"Caracteres: {n} / 200",
+                foreground="#4A5568" if n < 180 else "#DD6B20"
+            )
+
+    def accion_insertar_comentario_desde_tab(self):
+        med_sel = self.com_cb_medico.get().strip()
+        rec_sel = self.com_cb_recorrido.get().strip()
+        int_sel = self.com_cb_internacion.get().strip()
+        contenido = self.com_txt_contenido.get("1.0", tk.END).strip()
+
+        if not med_sel or " - " not in med_sel:
+            messagebox.showwarning("Médico Requerido", "Por favor selecciona un médico de la lista.")
+            return
+
+        if not rec_sel or not rec_sel.startswith("Recorrido #"):
+            messagebox.showwarning("Recorrido Requerido", "Por favor selecciona un recorrido válido del médico.\nSi el médico no tiene recorridos, créalo primero en la solapa 'Recorridos'.")
+            return
+
+        if not int_sel or not int_sel.startswith("Int #"):
+            messagebox.showwarning("Internación Requerida", "Por favor selecciona una internación activa de la lista.")
+            return
+
+        if not contenido:
+            messagebox.showwarning("Contenido Vacío", "Por favor ingresa el comentario o evolución clínica para el paciente.")
+            return
+
+        if len(contenido) > 200:
+            messagebox.showerror("Texto Demasiado Largo", f"El comentario tiene {len(contenido)} caracteres. El máximo permitido por la base de datos es de 200 caracteres.")
+            return
+
+        try:
+            id_rec = int(rec_sel.split("|")[0].replace("Recorrido #", "").strip())
+        except ValueError:
+            messagebox.showerror("Error", "No se pudo identificar el ID del recorrido.")
+            return
+
+        try:
+            id_int = int(int_sel.split("|")[0].replace("Int #", "").strip())
+        except ValueError:
+            messagebox.showerror("Error", "No se pudo identificar el ID de la internación.")
+            return
+
+        conn = None
+        cursor = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+
+            # 1. Validar que la internación no esté finalizada
+            cursor.execute("SELECT fecha_fin, numero_de_DNI FROM INTERNACION WHERE id_internacion = :1", [id_int])
+            fila_int = cursor.fetchone()
+            if not fila_int:
+                raise Exception(f"No se encontró la internación #{id_int} en el sistema.")
+
+            if fila_int[0] is not None:
+                raise Exception(
+                    f"Regla de negocio: La internación #{id_int} ya ha sido finalizada con fecha de alta ({fila_int[0]}).\n"
+                    "Solo se permite agregar comentarios médicos a internaciones activas (no finalizadas)."
+                )
+
+            # 2. REGLA DE NEGOCIO: La habitación actual del paciente debe estar en la ronda del recorrido
+            cursor.execute("""
+                SELECT pos.id_habitacion, r.id_ronda
+                FROM RECORRIDO r,
+                     (
+                         SELECT id_habitacion
+                         FROM POSEE
+                         WHERE id_internacion = :1
+                         ORDER BY fechaHora DESC
+                         FETCH FIRST 1 ROW ONLY
+                     ) pos
+                WHERE r.id_recorrido = :2
+            """, [id_int, id_rec])
+            row_hab_rec = cursor.fetchone()
+            if not row_hab_rec:
+                raise Exception("No se pudo determinar la habitación actual del paciente o el recorrido seleccionado.")
+
+            hab_actual, id_ronda = row_hab_rec[0], row_hab_rec[1]
+
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM COMPUESTA_POR
+                WHERE id_ronda = :1
+                  AND id_habitacion = :2
+            """, [id_ronda, hab_actual])
+            esta_en_ronda = cursor.fetchone()[0]
+
+            if esta_en_ronda == 0:
+                raise Exception(
+                    f"Regla de negocio: La habitación actual del paciente (Habitación #{hab_actual}) "
+                    f"NO pertenece a la Ronda #{id_ronda} del recorrido seleccionado.\n"
+                    "Solo se pueden hacer comentarios de internaciones cuyas habitaciones estén en su ronda."
+                )
+
+            id_comentario_var = cursor.var(oracledb.NUMBER)
+            cursor.execute("""
+                INSERT INTO COMENTARIO (contenido, id_internacion, id_recorrido)
+                VALUES (:1, :2, :3)
+                RETURNING id_comentario INTO :4
+            """, [contenido, id_int, id_rec, id_comentario_var])
+
+            nuevo_id_com = int(id_comentario_var.getvalue()[0])
+            conn.commit()
+
+            msg = f"Comentario #{nuevo_id_com} registrado con éxito para la Internación activa #{id_int} (Hab #{hab_actual}) en el Recorrido #{id_rec} (Ronda #{id_ronda})."
+            self.log_exito(msg)
+            messagebox.showinfo("Comentario Registrado", msg)
+
+            self.com_txt_contenido.delete("1.0", tk.END)
+            self.actualizar_contador_comentario()
+
+            self.cargar_comentarios_de_recorrido(id_rec)
+            self.cargar_internaciones_de_recorrido(id_rec)
+            matricula = med_sel.split(" - ")[0].strip()
+            self.cargar_recorridos_de_medico_com(matricula)
+
+            if hasattr(self, 'txt_id_int_comentario'):
+                self.txt_id_int_comentario.delete(0, tk.END)
+                self.txt_id_int_comentario.insert(0, str(id_int))
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            self.log_error(f"Error al registrar comentario médico:\n{traducir_error_oracle(e)}")
+            messagebox.showerror("Error al Guardar Comentario", traducir_error_oracle(e))
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    def mostrar_detalle_comentario(self, event=None):
+        sel = self.com_tabla_comentarios.selection()
+        if not sel:
+            messagebox.showinfo("Selección", "Por favor selecciona un comentario de la tabla.")
+            return
+        vals = self.com_tabla_comentarios.item(sel[0], "values")
+        id_com, id_int, pac, contenido = vals[0], vals[1], vals[2], vals[3]
+
+        modal = tk.Toplevel(self)
+        modal.title(f"Comentario #{id_com} - Internación #{id_int}")
+        modal.geometry("520x340")
+        modal.transient(self)
+        modal.grab_set()
+
+        f = ttk.Frame(modal, padding=14)
+        f.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(f, text=f"📋 Evolución Médica #{id_com}", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 4))
+        ttk.Label(f, text=f"• Internación: #{id_int} | Paciente: {pac}", font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 8))
+
+        txt = scrolledtext.ScrolledText(f, height=8, wrap=tk.WORD, font=("Segoe UI", 10))
+        txt.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        txt.insert(tk.END, contenido)
+        txt.config(state="disabled")
+
+        tk.Button(f, text="Cerrar", bg="#E2E8F0", cursor="hand2", command=modal.destroy).pack(anchor="e")
+
+    def accion_eliminar_comentario(self):
+        sel = self.com_tabla_comentarios.selection()
+        if not sel:
+            messagebox.showinfo("Selección", "Por favor selecciona un comentario de la tabla para eliminar.")
+            return
+        vals = self.com_tabla_comentarios.item(sel[0], "values")
+        id_com, id_int, pac = int(vals[0]), vals[1], vals[2]
+
+        if not messagebox.askyesno("Confirmar Eliminación", f"¿Deseas eliminar el Comentario #{id_com} de la Internación #{id_int} ({pac})?"):
+            return
+
+        conn = None
+        cursor = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM COMENTARIO WHERE id_comentario = :1", [id_com])
+            conn.commit()
+            self.log_exito(f"Comentario #{id_com} eliminado correctamente.")
+            messagebox.showinfo("Éxito", f"Comentario #{id_com} eliminado correctamente.")
+
+            rec_sel = self.com_cb_recorrido.get().strip()
+            if rec_sel and rec_sel.startswith("Recorrido #"):
+                id_rec = int(rec_sel.split("|")[0].replace("Recorrido #", "").strip())
+                self.cargar_comentarios_de_recorrido(id_rec)
+                med_sel = self.com_cb_medico.get().strip()
+                if med_sel and " - " in med_sel:
+                    matricula = med_sel.split(" - ")[0].strip()
+                    self.cargar_recorridos_de_medico_com(matricula)
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            self.log_error(f"Error al eliminar comentario #{id_com}:\n{traducir_error_oracle(e)}")
+            messagebox.showerror("Error al Eliminar", traducir_error_oracle(e))
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    def accion_ver_sp_desde_comentarios(self):
+        sel = self.com_tabla_comentarios.selection()
+        if sel:
+            vals = self.com_tabla_comentarios.item(sel[0], "values")
+            id_int = vals[1]
+        else:
+            int_sel = self.com_cb_internacion.get().strip()
+            if int_sel and int_sel.startswith("Int #"):
+                id_int = int_sel.split("|")[0].replace("Int #", "").strip()
+            else:
+                messagebox.showinfo("Selección", "Por favor selecciona un comentario de la tabla o una internación.")
+                return
+
+        if hasattr(self, 'txt_id_int_comentario'):
+            self.txt_id_int_comentario.delete(0, tk.END)
+            self.txt_id_int_comentario.insert(0, str(id_int))
+        self.accion_consultar_comentarios_sp()
+
+    def refrescar_panel_comentarios(self):
+        conn = None
+        try:
+            conn = obtener_conexion()
+            cursor = conn.cursor()
+            medicos = self._obtener_opciones_medicos(cursor)
+            cursor.close()
+
+            if hasattr(self, 'com_cb_medico'):
+                self.com_cb_medico['values'] = medicos
+                if medicos:
+                    if not self.com_cb_medico.get() or self.com_cb_medico.get() not in medicos:
+                        self.com_cb_medico.set(medicos[0])
+                    self.on_com_medico_seleccionado()
+                else:
+                    self.com_cb_medico.set("")
+                    if hasattr(self, 'com_cb_recorrido'):
+                        self.com_cb_recorrido['values'] = []
+                        self.com_cb_recorrido.set("")
+                    if hasattr(self, 'com_cb_internacion'):
+                        self.com_cb_internacion['values'] = []
+                        self.com_cb_internacion.set("(No hay médicos registrados)")
+        except Exception as e:
+            self.log_error(f"Error al refrescar panel de comentarios: {e}")
+        finally:
             if conn:
                 conn.close()
 

@@ -404,6 +404,12 @@ insert into compuesta_por (
    id_habitacion
 ) values
    ( 2,
+     1 );
+insert into compuesta_por (
+   id_ronda,
+   id_habitacion
+) values
+   ( 2,
      2 );
 insert into compuesta_por (
    id_ronda,
@@ -533,6 +539,9 @@ insert into comentario (
    ( 'Estudios normales, listo para el alta mañana.',
      1,
      2 );
+
+-- Caso de prueba del TRIGGER trg_comentario_ronda (descomentar para verificar que rechaza comentario para internación cuya habitación no pertenece a la ronda del recorrido, debe arrojar error ORA-20014)
+-- INSERT INTO COMENTARIO (contenido, id_internacion, id_recorrido) VALUES ('Prueba habitación fuera de ronda', 1, 3);
 
 
 insert into especialidad ( nombre ) values
