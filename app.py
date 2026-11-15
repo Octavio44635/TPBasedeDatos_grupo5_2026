@@ -3182,8 +3182,8 @@ class HospitalApp(tk.Tk):
 
             fmt = 'YYYY-MM-DD' if '-' in fecha_nueva else 'DD/MM/YYYY'
             nuevo_set = {(a["mat"], a["id_esp"]) for a in asignaciones}
-            a_eliminar = asignaciones_originales - nuevo_set
-            a_insertar = nuevo_set - asignaciones_originales
+            lista_eliminar = [x for x in asignaciones_originales if x not in nuevo_set]
+            lista_insertar = [x for x in nuevo_set if x not in asignaciones_originales]
 
             cur_save = None
             try:
@@ -3195,17 +3195,39 @@ class HospitalApp(tk.Tk):
                     WHERE id_guardia = :3
                 """, [fecha_nueva, turno_nuevo, id_guardia])
 
-                for mat_del, esp_del in a_eliminar:
+                # 1. Emparejar reemplazos de médico/especialidad como sentencias UPDATE en CUBIERTA_POR
+                num_updates = min(len(lista_eliminar), len(lista_insertar))
+                for _ in range(num_updates):
+                    old_mat, old_esp = lista_eliminar.pop(0)
+                    new_mat, new_esp = lista_insertar.pop(0)
+                    cur_save.execute("""
+                        UPDATE CUBIERTA_POR
+                        SET numero_de_matricula = :1, id_especialidad = :2
+                        WHERE id_guardia = :3 AND numero_de_matricula = :4 AND id_especialidad = :5
+                    """, [new_mat, new_esp, id_guardia, old_mat, old_esp])
+
+                # 2. Asignaciones agregadas (altas reales) ejecutan INSERT en CUBIERTA_POR
+                for mat_ins, esp_ins in lista_insertar:
+                    cur_save.execute("""
+                        INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia)
+                        VALUES (:1, :2, :3)
+                    """, [mat_ins, esp_ins, id_guardia])
+
+                # 3. Asignaciones quitadas (bajas reales) ejecutan DELETE en CUBIERTA_POR
+                for mat_del, esp_del in lista_eliminar:
                     cur_save.execute("""
                         DELETE FROM CUBIERTA_POR
                         WHERE id_guardia = :1 AND numero_de_matricula = :2 AND id_especialidad = :3
                     """, [id_guardia, mat_del, esp_del])
 
-                for mat_ins, esp_ins in a_insertar:
-                    cur_save.execute("""
-                        INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia)
-                        VALUES (:1, :2, :3)
-                    """, [mat_ins, esp_ins, id_guardia])
+                # 4. Si no cambiaron médicos pero sí fecha/turno, registrar el UPDATE en CUBIERTA_POR
+                if num_updates == 0 and not lista_insertar and not lista_eliminar:
+                    if fecha_nueva != fecha_actual or turno_nuevo != turno_actual:
+                        cur_save.execute("""
+                            UPDATE CUBIERTA_POR
+                            SET id_especialidad = id_especialidad
+                            WHERE id_guardia = :1
+                        """, [id_guardia])
 
                 cur_save.execute("SELECT COUNT(*) FROM CUBIERTA_POR WHERE id_guardia = :1", [id_guardia])
                 if cur_save.fetchone()[0] < 1:
@@ -3283,6 +3305,9 @@ class HospitalApp(tk.Tk):
         cursor = None
         try:
             cursor = conn.cursor()
+            # 1. Eliminar explícitamente de CUBIERTA_POR para activar el trigger de auditoría trg_auditoria_guardias (DELETE)
+            cursor.execute("DELETE FROM CUBIERTA_POR WHERE id_guardia = :1", [id_guardia])
+            # 2. Eliminar la guardia
             cursor.execute("DELETE FROM GUARDIA WHERE id_guardia = :1", [id_guardia])
             if cursor.rowcount == 0:
                 raise Exception(f"No se encontró la guardia #{id_guardia} en la base de datos.")
