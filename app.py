@@ -2384,7 +2384,7 @@ class HospitalApp(tk.Tk):
         ttk.Label(grid_frame, text="Usuario BD:").grid(row=0, column=0, sticky="w", pady=5)
         entry_user = ttk.Entry(grid_frame, width=24)
         entry_user.grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=5)
-        usuario_sugerido = self.usuario_guardias
+        usuario_sugerido = self.usuario_guardias or "Medico1"
         entry_user.insert(0, usuario_sugerido)
 
         ttk.Label(grid_frame, text="Contraseña:").grid(row=1, column=0, sticky="w", pady=5)
