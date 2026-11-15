@@ -438,3 +438,12 @@ BEGIN
     COMMIT;
 END;
 /
+CREATE OR REPLACE TRIGGER trg_validar_fecha_inicio_int
+BEFORE INSERT OR UPDATE ON INTERNACION
+FOR EACH ROW
+BEGIN
+    IF :NEW.fecha_inicio > SYSDATE THEN
+        RAISE_APPLICATION_ERROR(-20011, 'Regla de negocio: La fecha de inicio de la internación no puede ser mayor que la fecha del sistema (SYSDATE).');
+    END IF;
+END;
+/

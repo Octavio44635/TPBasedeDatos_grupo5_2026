@@ -143,6 +143,13 @@ def traducir_error_oracle(error, contexto=None):
             "Por regla del hospital, no se puede registrar una nueva internación para un paciente que ya se encuentra actualmente internado.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
+    if "20011" in mensaje_mayus or "FECHA_INICIO" in mensaje_mayus or "VALIDAR_FECHA_INICIO" in mensaje_mayus:
+        return (
+            "❌ REGLA DE NEGOCIO VIOLADA: FECHA DE INICIO EN EL FUTURO (Trigger trg_validar_fecha_inicio_int):\n"
+            "Explicación humana: La fecha de inicio de la internación no puede ser mayor a la fecha actual del sistema (SYSDATE).\n"
+            "Por regla del hospital, no se pueden registrar internaciones con fecha futura.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
     if "20001" in mensaje_mayus:
         return (
             "❌ FECHA DE CAMA ANTERIOR A INTERNACIÓN (Trigger trg_posee_fecha):\n"
@@ -604,7 +611,7 @@ class HospitalApp(tk.Tk):
 
         # Tab 3: Consola SQL
         self.tab_sql = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(self.tab_sql, text=" 💻 Consola SQL en Vivo (Para el Parcial) ")
+        self.notebook.add(self.tab_sql, text=" 💻 Consola SQL en Vivo")
         self.construir_tab_sql()
 
     # ==========================================================================
@@ -635,6 +642,23 @@ class HospitalApp(tk.Tk):
         self.txt_cama = ttk.Entry(frame_internacion, width=13)
         self.txt_cama.grid(row=1, column=3, pady=3, sticky="w")
 
+        ttk.Label(frame_internacion, text="Fecha Inicio:").grid(row=2, column=0, sticky="w", pady=3)
+        self.txt_fecha_inicio = ttk.Entry(frame_internacion, width=15)
+        self.txt_fecha_inicio.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        self.txt_fecha_inicio.grid(row=2, column=1, pady=3, padx=(0, 6), sticky="w")
+
+        ttk.Label(frame_internacion, text="Fecha Fin:").grid(row=2, column=2, sticky="w", pady=3)
+        self.txt_fecha_fin = ttk.Entry(frame_internacion, width=13)
+        self.txt_fecha_fin.grid(row=2, column=3, pady=3, sticky="w")
+
+        lbl_ayuda_fechas = ttk.Label(
+            frame_internacion,
+            text="Formato: DD/MM/AAAA (Fecha Fin vacía = internación activa)",
+            font=("Segoe UI", 8, "italic"),
+            foreground="#4A5568"
+        )
+        lbl_ayuda_fechas.grid(row=3, column=0, columnspan=4, sticky="w", pady=(1, 4))
+
         btn_ejecutar = tk.Button(
             frame_internacion, 
             text="⚡ Registrar Internación (COMMIT / ROLLBACK)", 
@@ -645,7 +669,7 @@ class HospitalApp(tk.Tk):
             cursor="hand2",
             command=self.accion_registrar_internacion
         )
-        btn_ejecutar.grid(row=2, column=0, columnspan=4, pady=(8, 2), sticky="ew")
+        btn_ejecutar.grid(row=4, column=0, columnspan=4, pady=(6, 2), sticky="ew")
 
         # 2. Formulario: Traslado / Cambio de Cama y Alta Médica
         frame_traslado = ttk.LabelFrame(columna_izq, text=" 🔄 Gestión de Internación (Traslado / Alta Médica) ", padding=10)
@@ -788,9 +812,11 @@ class HospitalApp(tk.Tk):
         matricula = self.txt_matricula.get().strip()
         hab_str = self.txt_hab.get().strip()
         cama_str = self.txt_cama.get().strip()
+        fecha_inicio_str = self.txt_fecha_inicio.get().strip() if hasattr(self, 'txt_fecha_inicio') else ""
+        fecha_fin_str = self.txt_fecha_fin.get().strip() if hasattr(self, 'txt_fecha_fin') else ""
 
-        if not (dni and matricula and hab_str and cama_str):
-            messagebox.showwarning("Campos Incompletos", "Por favor completa todos los campos del formulario.")
+        if not (dni and matricula and hab_str and cama_str and fecha_inicio_str):
+            messagebox.showwarning("Campos Incompletos", "Por favor completa el DNI, Matrícula, Habitación, Cama y Fecha de Inicio.")
             return
 
         try:
@@ -801,10 +827,42 @@ class HospitalApp(tk.Tk):
             messagebox.showerror("Dato Inválido", "Habitación y Cama deben ser valores numéricos enteros.")
             return
 
+        # Parsear fecha de inicio
+        fecha_inicio_dt = None
+        for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                fecha_inicio_dt = datetime.strptime(fecha_inicio_str, fmt)
+                break
+            except ValueError:
+                pass
+        if fecha_inicio_dt is None:
+            self.log_error(f"Formato de Fecha de Inicio inválido: '{fecha_inicio_str}'. Use DD/MM/AAAA.")
+            messagebox.showerror("Fecha Inválida", f"La Fecha de Inicio '{fecha_inicio_str}' no es válida.\nFormato esperado: DD/MM/AAAA (ej. {datetime.now().strftime('%d/%m/%Y')}).")
+            return
+
+        # Parsear fecha de fin (opcional)
+        fecha_fin_dt = None
+        if fecha_fin_str:
+            for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                try:
+                    fecha_fin_dt = datetime.strptime(fecha_fin_str, fmt)
+                    break
+                except ValueError:
+                    pass
+            if fecha_fin_dt is None:
+                self.log_error(f"Formato de Fecha de Fin inválido: '{fecha_fin_str}'. Use DD/MM/AAAA.")
+                messagebox.showerror("Fecha Inválida", f"La Fecha de Fin '{fecha_fin_str}' no es válida.\nFormato esperado: DD/MM/AAAA o dejar en blanco.")
+                return
+
+            if fecha_fin_dt < fecha_inicio_dt:
+                self.log_error("Fecha de Fin anterior a Fecha de Inicio.")
+                messagebox.showerror("Fechas Inconsistentes", "La Fecha de Fin (alta) no puede ser anterior a la Fecha de Inicio de la internación.")
+                return
+
         conn = None
         cursor = None
         try:
-            self.log_info(f"Iniciando transacción: Asignando Paciente DNI={dni} a Hab={hab}, Cama={cama} con Médico={matricula}...")
+            self.log_info(f"Iniciando transacción: Asignando Paciente DNI={dni} a Hab={hab}, Cama={cama} con Médico={matricula} (Inicio={fecha_inicio_str})...")
             conn = obtener_conexion()
             cursor = conn.cursor()
 
@@ -819,7 +877,7 @@ class HospitalApp(tk.Tk):
             fila_cama = cursor.fetchone()
             if not fila_cama:
                 raise Exception(f"La cama {cama} de la habitación {hab} no existe en la base de datos.")
-            if fila_cama[0].upper() != 'LIBRE':
+            if fecha_fin_dt is None and fila_cama[0].upper() != 'LIBRE':
                 raise Exception(f"La cama {cama} de la habitación {hab} no está disponible (Estado actual: '{fila_cama[0]}').")
 
             # 1.5. Validar regla médica de autoatención
@@ -829,32 +887,54 @@ class HospitalApp(tk.Tk):
                 raise Exception("Regla médica de negocio: Un médico no puede ser el profesional a cargo de su propia internación (el DNI del paciente coincide con el DNI del médico).")
 
             # 2. Inserción de la Internación
+            # Si fecha_inicio > SYSDATE, el Trigger 'trg_validar_fecha_inicio_int' abortará la operación con ORA-20011.
+            fecha_inicio_iso = fecha_inicio_dt.strftime("%Y-%m-%d %H:%M:%S")
+            fecha_fin_iso = fecha_fin_dt.strftime("%Y-%m-%d %H:%M:%S") if fecha_fin_dt else None
+
             id_internacion_var = cursor.var(oracledb.NUMBER)
-            cursor.execute("""
-                INSERT INTO INTERNACION (fecha_inicio, numero_de_DNI, numero_de_matricula)
-                VALUES (TRUNC(SYSDATE), :1, :2)
-                RETURNING id_internacion INTO :3
-            """, [dni, matricula, id_internacion_var])
+            if fecha_fin_iso:
+                cursor.execute("""
+                    INSERT INTO INTERNACION (fecha_inicio, fecha_fin, numero_de_DNI, numero_de_matricula)
+                    VALUES (TO_DATE(:1, 'YYYY-MM-DD HH24:MI:SS'), TO_DATE(:2, 'YYYY-MM-DD HH24:MI:SS'), :3, :4)
+                    RETURNING id_internacion INTO :5
+                """, [fecha_inicio_iso, fecha_fin_iso, dni, matricula, id_internacion_var])
+            else:
+                cursor.execute("""
+                    INSERT INTO INTERNACION (fecha_inicio, fecha_fin, numero_de_DNI, numero_de_matricula)
+                    VALUES (TO_DATE(:1, 'YYYY-MM-DD HH24:MI:SS'), NULL, :2, :3)
+                    RETURNING id_internacion INTO :4
+                """, [fecha_inicio_iso, dni, matricula, id_internacion_var])
             
             id_internacion = int(id_internacion_var.getvalue()[0])
 
-            # 3. Ocupar la cama (respetando si la tabla usa 'OCUPADA' u 'Ocupada')
-            estado_ocupado = "OCUPADA" if fila_cama[0].isupper() else "Ocupada"
-            cursor.execute("""
-                UPDATE CAMA 
-                SET estado = :1 
-                WHERE id_habitacion = :2 AND nro_cama = :3
-            """, [estado_ocupado, hab, cama])
+            # 3. Ocupar la cama si la internación está activa (respetando si la tabla usa 'OCUPADA' u 'Ocupada')
+            if fecha_fin_dt is None:
+                estado_ocupado = "OCUPADA" if fila_cama[0].isupper() else "Ocupada"
+                cursor.execute("""
+                    UPDATE CAMA 
+                    SET estado = :1 
+                    WHERE id_habitacion = :2 AND nro_cama = :3
+                """, [estado_ocupado, hab, cama])
 
-            # 4. Insertar en POSEE (historial con timestamp)
-            cursor.execute("""
-                INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
-                VALUES (:1, :2, :3, SYSTIMESTAMP)
-            """, [id_internacion, hab, cama])
+            # 4. Insertar en POSEE (historial con timestamp compatible con trg_posee_fecha)
+            if fecha_fin_dt is not None:
+                cursor.execute("""
+                    INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
+                    VALUES (:1, :2, :3, TO_TIMESTAMP(:4, 'YYYY-MM-DD HH24:MI:SS'))
+                """, [id_internacion, hab, cama, fecha_inicio_iso])
+            else:
+                cursor.execute("""
+                    INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
+                    VALUES (:1, :2, :3, SYSTIMESTAMP)
+                """, [id_internacion, hab, cama])
 
             # Confirmar transacción completa
             conn.commit()
-            mensaje_exito = f"Transacción confirmada (COMMIT): Internación #{id_internacion} creada con éxito. Cama {cama} de Hab {hab} quedó OCUPADA."
+            if fecha_fin_dt is None:
+                mensaje_exito = f"Transacción confirmada (COMMIT): Internación #{id_internacion} creada con éxito (Inicio: {fecha_inicio_str}). Cama {cama} de Hab {hab} quedó OCUPADA."
+            else:
+                mensaje_exito = f"Transacción confirmada (COMMIT): Internación #{id_internacion} registrada como finalizada (Inicio: {fecha_inicio_str}, Fin: {fecha_fin_str}). Cama {cama} de Hab {hab} permanece LIBRE."
+
             self.log_exito(mensaje_exito)
             messagebox.showinfo("Transacción Exitosa", mensaje_exito)
 
@@ -862,6 +942,12 @@ class HospitalApp(tk.Tk):
             self.txt_matricula.delete(0, tk.END)
             self.txt_hab.delete(0, tk.END)
             self.txt_cama.delete(0, tk.END)
+            if hasattr(self, 'txt_fecha_inicio'):
+                self.txt_fecha_inicio.delete(0, tk.END)
+                self.txt_fecha_inicio.insert(0, datetime.now().strftime("%d/%m/%Y"))
+            if hasattr(self, 'txt_fecha_fin'):
+                self.txt_fecha_fin.delete(0, tk.END)
+
             self.cargar_camas_libres()
             self.actualizar_combo_internaciones()
 
@@ -965,7 +1051,7 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT i.id_internacion, p.nombre, p.apellido, i.numero_de_DNI, i.fecha_fin
+                SELECT i.id_internacion, p.nombre, p.apellido, i.numero_de_DNI, i.fecha_inicio, i.fecha_fin
                 FROM INTERNACION i
                 JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
                 WHERE i.id_internacion = :1
@@ -976,7 +1062,7 @@ class HospitalApp(tk.Tk):
                 cursor.close()
                 return
 
-            id_i, nom, ape, dni, f_fin = row
+            id_i, nom, ape, dni, f_ini, f_fin = row
 
             cursor.execute("""
                 SELECT id_habitacion, nro_cama
@@ -993,20 +1079,22 @@ class HospitalApp(tk.Tk):
                 self.txt_id_int_comentario.delete(0, tk.END)
                 self.txt_id_int_comentario.insert(0, str(id_int))
 
+            f_ini_str = f_ini.strftime('%d/%m/%Y') if f_ini else 'N/D'
+
             if f_fin is not None:
                 self.lbl_traslado_info.config(
-                    text=f"⚠️ Paciente {nom} {ape} (DNI {dni}) - ALTA MÉDICA OTORGADA ({f_fin.strftime('%d/%m/%Y')}).",
+                    text=f"⚠️ Paciente {nom} {ape} (DNI {dni}) - ALTA MÉDICA OTORGADA ({f_fin.strftime('%d/%m/%Y')}) | Ingreso: {f_ini_str}.",
                     foreground="#C53030"
                 )
             elif row_cama:
                 hab_act, cama_act = row_cama
                 self.lbl_traslado_info.config(
-                    text=f"👤 {nom} {ape} (DNI {dni}) | Cama actual: Hab {hab_act}, Cama {cama_act}",
+                    text=f"👤 {nom} {ape} (DNI {dni}) | Ingreso: {f_ini_str} | Cama actual: Hab {hab_act}, Cama {cama_act}",
                     foreground="#2B6CB0"
                 )
             else:
                 self.lbl_traslado_info.config(
-                    text=f"👤 {nom} {ape} (DNI {dni}) | Sin cama previa asignada",
+                    text=f"👤 {nom} {ape} (DNI {dni}) | Ingreso: {f_ini_str} | Sin cama previa asignada",
                     foreground="#4A5568"
                 )
         except Exception as e:
@@ -2877,7 +2965,7 @@ class HospitalApp(tk.Tk):
                 conn.close()
 
     # ==========================================================================
-    # TAB 3: CONSOLA SQL PARA EL PARCIAL
+    # TAB 3: CONSOLA SQL
     # ==========================================================================
     def construir_tab_sql(self):
         frame_editor = ttk.LabelFrame(self.tab_sql, text=" Editor de Consultas SQL en Vivo ", padding=10)

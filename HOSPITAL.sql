@@ -482,6 +482,9 @@ insert into internacion (
 -- Caso de prueba del TRIGGER trg_evitar_autoatencion (descomentar para probar que rechaza la autoatencion, debe arrojar error ORA-20008)
 -- INSERT INTO INTERNACION (fecha_inicio, numero_de_DNI, numero_de_matricula) VALUES (SYSDATE - 1, '11111111', 'M100');
 
+-- Caso de prueba del TRIGGER trg_validar_fecha_inicio_int (descomentar para probar que rechaza fecha futura mayor a SYSDATE, debe arrojar error ORA-20011)
+-- INSERT INTO INTERNACION (fecha_inicio, numero_de_DNI, numero_de_matricula) VALUES (SYSDATE + 1, '22222222', 'M102');
+
 insert into posee (
    id_internacion,
    id_habitacion,
