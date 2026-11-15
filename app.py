@@ -423,12 +423,20 @@ def traducir_error_oracle(error, contexto=None):
 # ==============================================================================
 # CONEXIÓN
 # ==============================================================================
-def obtener_conexion():
-    return oracledb.connect(
-        user=os.getenv('DB_USER'),
-        password=os.getenv('DB_PASS'),
-        dsn=os.getenv('DSN')
-    )
+def obtener_conexion(user=None, password=None):
+    u = user or os.getenv('DB_USER')
+    p = password or os.getenv('DB_PASS')
+    dsn = os.getenv('DSN')
+    conn = oracledb.connect(user=u, password=p, dsn=dsn)
+
+    dueno = os.getenv('DB_USER')
+    if dueno and u.upper() != dueno.upper():
+        cur = conn.cursor()
+        try:
+            cur.execute(f"ALTER SESSION SET CURRENT_SCHEMA = {dueno}")
+        finally:
+            cur.close()
+    return conn
 
 # ==============================================================================
 # APLICACIÓN PRINCIPAL
@@ -439,6 +447,11 @@ class HospitalApp(tk.Tk):
         self.title("Sistema Hospitalario - Gestión de Internaciones y Consultas SQL (UNMDP)")
         self.geometry("1180x820")
         self.minsize(980, 650)
+
+        self.usuario_guardias = None
+        self.password_guardias = None
+        self._app_iniciada = False
+        self._pestana_altas_anterior = None
 
         self.configurar_estilos()
 
@@ -461,9 +474,10 @@ class HospitalApp(tk.Tk):
         # Pestañas
         self.crear_pestanas(self.frame_superior)
 
-        self.log_info(f"Sistema iniciado correctamente. Conectado a Oracle como usuario: '{os.getenv('DB_USER')}'.")
+        self.log_info(f"Sistema iniciado correctamente. Conectado a Oracle con credenciales de .env como usuario: '{os.getenv('DB_USER')}'.")
         self.cargar_camas_libres()
         self.actualizar_combo_internaciones()
+        self._app_iniciada = True
 
     def configurar_estilos(self):
         self.style = ttk.Style(self)
@@ -1464,32 +1478,48 @@ class HospitalApp(tk.Tk):
     # TAB 2: SECCIONES DE ALTAS (PACIENTES, MÉDICOS, SECTORES, HABITACIONES, CAMAS)
     # ==========================================================================
     def construir_tab_altas(self):
-        notebook_altas = ttk.Notebook(self.tab_altas)
-        notebook_altas.pack(fill=tk.BOTH, expand=True)
+        self.notebook_altas = ttk.Notebook(self.tab_altas)
+        self.notebook_altas.pack(fill=tk.BOTH, expand=True)
 
-        tab_pac = ttk.Frame(notebook_altas, padding=12)
-        notebook_altas.add(tab_pac, text=" 👤 Pacientes ")
+        tab_pac = ttk.Frame(self.notebook_altas, padding=12)
+        self.notebook_altas.add(tab_pac, text=" 👤 Pacientes ")
         self.construir_subtab_paciente(tab_pac)
 
-        tab_med = ttk.Frame(notebook_altas, padding=12)
-        notebook_altas.add(tab_med, text=" 🩺 Médicos ")
+        tab_med = ttk.Frame(self.notebook_altas, padding=12)
+        self.notebook_altas.add(tab_med, text=" 🩺 Médicos ")
         self.construir_subtab_medico(tab_med)
 
-        tab_sec = ttk.Frame(notebook_altas, padding=12)
-        notebook_altas.add(tab_sec, text=" 🏢 Sectores ")
+        tab_sec = ttk.Frame(self.notebook_altas, padding=12)
+        self.notebook_altas.add(tab_sec, text=" 🏢 Sectores ")
         self.construir_subtab_sector(tab_sec)
 
-        tab_hab = ttk.Frame(notebook_altas, padding=12)
-        notebook_altas.add(tab_hab, text=" 🚪 Habitaciones ")
+        tab_hab = ttk.Frame(self.notebook_altas, padding=12)
+        self.notebook_altas.add(tab_hab, text=" 🚪 Habitaciones ")
         self.construir_subtab_habitacion(tab_hab)
 
-        tab_cama = ttk.Frame(notebook_altas, padding=12)
-        notebook_altas.add(tab_cama, text=" 🛏️ Camas ")
+        tab_cama = ttk.Frame(self.notebook_altas, padding=12)
+        self.notebook_altas.add(tab_cama, text=" 🛏️ Camas ")
         self.construir_subtab_cama(tab_cama)
 
-        tab_guardia = ttk.Frame(notebook_altas, padding=12)
-        notebook_altas.add(tab_guardia, text=" 🛡️ Guardias ")
-        self.construir_subtab_guardia(tab_guardia)
+        self.tab_guardia = ttk.Frame(self.notebook_altas, padding=12)
+        self.notebook_altas.add(self.tab_guardia, text=" 🛡️ Guardias ")
+        self.construir_subtab_guardia(self.tab_guardia)
+
+        self._pestana_altas_anterior = self.notebook_altas.select()
+        self.notebook_altas.bind("<<NotebookTabChanged>>", self.on_cambio_pestana_altas)
+
+    def on_cambio_pestana_altas(self, event=None):
+        if not getattr(self, '_app_iniciada', False):
+            return
+        pestana_actual = self.notebook_altas.select()
+        if hasattr(self, 'tab_guardia') and pestana_actual == str(self.tab_guardia):
+            if not self.usuario_guardias:
+                exito = self.solicitar_login_guardias()
+                if not exito:
+                    if self._pestana_altas_anterior and self._pestana_altas_anterior != str(self.tab_guardia):
+                        self.notebook_altas.select(self._pestana_altas_anterior)
+                    return
+        self._pestana_altas_anterior = pestana_actual
 
     # 1. Subtab Paciente
     def construir_subtab_paciente(self, parent):
@@ -2286,11 +2316,209 @@ class HospitalApp(tk.Tk):
             if conn:
                 conn.close()
 
-    # 6. Subtab Guardia
+    # 6. Gestión de Sesión de BD para Guardias
+    def obtener_conexion_guardias_o_default(self):
+        """Devuelve conexión con el usuario de guardias si está autenticado, o con el usuario por defecto de .env."""
+        if self.usuario_guardias and self.password_guardias:
+            return obtener_conexion(self.usuario_guardias, self.password_guardias)
+        return obtener_conexion()
+
+    def obtener_conexion_guardias(self):
+        """Devuelve una conexión exigiendo usuario autenticado para guardias. Si no hay sesión, pide login."""
+        if not self.usuario_guardias or not self.password_guardias:
+            if not self.solicitar_login_guardias():
+                return None
+        try:
+            return obtener_conexion(self.usuario_guardias, self.password_guardias)
+        except Exception as e:
+            self.usuario_guardias = None
+            self.password_guardias = None
+            self.actualizar_banner_usuario_guardias()
+            messagebox.showerror("Error de Autenticación", f"Falló la conexión con el usuario de guardias:\n{traducir_error_oracle(e)}")
+            if self.solicitar_login_guardias():
+                return obtener_conexion(self.usuario_guardias, self.password_guardias)
+            return None
+
+    def solicitar_login_guardias(self, forzar=False):
+        """Abre un diálogo modal para iniciar sesión o cambiar a otro usuario de BD para gestionar guardias."""
+        resultado = {"exito": False}
+
+        dialogo = tk.Toplevel(self)
+        dialogo.title("🔐 Login de Usuario - Gestión de Guardias")
+        dialogo.configure(bg=self.COLOR_FONDO)
+        dialogo.geometry("440x290")
+        dialogo.minsize(420, 270)
+        dialogo.transient(self)
+        dialogo.grab_set()
+
+        try:
+            x = self.winfo_x() + (self.winfo_width() // 2) - 220
+            y = self.winfo_y() + (self.winfo_height() // 2) - 145
+            dialogo.geometry(f"+{max(0, x)}+{max(0, y)}")
+        except Exception:
+            pass
+
+        frame = ttk.Frame(dialogo, padding=16)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(
+            frame,
+            text="🔐 Autenticación de Usuario para Guardias",
+            font=("Segoe UI", 11, "bold"),
+            foreground="#1A365D"
+        ).pack(anchor="w", pady=(0, 4))
+
+        ttk.Label(
+            frame,
+            text="Para gestionar guardias debe ingresar con un usuario de la base de datos con permisos.",
+            font=("Segoe UI", 9),
+            foreground="#4A5568",
+            wraplength=390,
+            justify="left"
+        ).pack(anchor="w", pady=(0, 10))
+
+        grid_frame = ttk.Frame(frame)
+        grid_frame.pack(fill=tk.X, pady=(0, 10))
+        grid_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(grid_frame, text="Usuario BD:").grid(row=0, column=0, sticky="w", pady=5)
+        entry_user = ttk.Entry(grid_frame, width=24)
+        entry_user.grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=5)
+        usuario_sugerido = self.usuario_guardias
+        entry_user.insert(0, usuario_sugerido)
+
+        ttk.Label(grid_frame, text="Contraseña:").grid(row=1, column=0, sticky="w", pady=5)
+        entry_pass = ttk.Entry(grid_frame, width=24, show="*")
+        entry_pass.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=5)
+
+        lbl_error = ttk.Label(frame, text="", font=("Segoe UI", 8), foreground="#C53030", wraplength=390)
+        lbl_error.pack(fill=tk.X, pady=(0, 6))
+
+        def intentar_login(event=None):
+            u = entry_user.get().strip()
+            p = entry_pass.get()
+            if not u:
+                lbl_error.config(text="⚠️ Por favor ingrese el nombre de usuario.")
+                entry_user.focus_set()
+                return
+            if not p:
+                lbl_error.config(text="⚠️ Por favor ingrese la contraseña.")
+                entry_pass.focus_set()
+                return
+
+            try:
+                test_conn = obtener_conexion(user=u, password=p)
+                test_conn.close()
+
+                self.usuario_guardias = u
+                self.password_guardias = p
+                resultado["exito"] = True
+                self.log_exito(f"Sesión activa para gestión de guardias: '{u.upper()}'.")
+                self.actualizar_banner_usuario_guardias()
+                self.refrescar_panel_guardias()
+                dialogo.destroy()
+            except Exception as e:
+                msg = traducir_error_oracle(e)
+                lbl_error.config(text=f"❌ Error al conectar:\n{msg[:130]}...")
+                self.log_error(f"Fallo de login para guardias ({u}):\n{msg}")
+
+        entry_pass.bind("<Return>", intentar_login)
+        entry_user.bind("<Return>", lambda _e: entry_pass.focus_set())
+
+        frame_btns = ttk.Frame(frame)
+        frame_btns.pack(fill=tk.X, pady=(6, 0))
+
+        btn_conectar = tk.Button(
+            frame_btns,
+            text="🔓 Conectar e Ingresar",
+            bg="#2B6CB0",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="groove",
+            cursor="hand2",
+            command=intentar_login
+        )
+        btn_conectar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+
+        btn_cancelar = tk.Button(
+            frame_btns,
+            text="Cancelar",
+            bg="#E2E8F0",
+            cursor="hand2",
+            command=dialogo.destroy
+        )
+        btn_cancelar.pack(side=tk.RIGHT)
+
+        entry_pass.focus_set()
+        self.wait_window(dialogo)
+        return resultado["exito"]
+
+    def actualizar_banner_usuario_guardias(self):
+        if hasattr(self, 'lbl_usuario_guardia'):
+            if self.usuario_guardias:
+                self.lbl_usuario_guardia.config(
+                    text=f"👤 Usuario BD conectado: {self.usuario_guardias.upper()}",
+                    foreground="#276749"
+                )
+            else:
+                self.lbl_usuario_guardia.config(
+                    text="⚠️ Sesión no iniciada (Requiere login de BD)",
+                    foreground="#C53030"
+                )
+
+    def restablecer_usuario_guardias(self):
+        self.usuario_guardias = None
+        self.password_guardias = None
+        self.actualizar_banner_usuario_guardias()
+        self.log_info(f"Sesión de guardias restablecida a credenciales de ('{os.getenv('DB_USER')}').")
+        self.refrescar_panel_guardias()
+
+    # Subtab Guardia
     def construir_subtab_guardia(self, parent):
         """Construye el panel de alta directa, listado, modificación y baja de guardias."""
-        frame_form = ttk.LabelFrame(parent, text=" ➕ Crear Nueva Guardia (con Médico Asignado) ", padding=10)
-        frame_form.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        columna_izq = ttk.Frame(parent)
+        columna_izq.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+
+        # Banner de Sesión de Base de Datos para Guardias
+        frame_sesion = ttk.LabelFrame(columna_izq, text=" 🔐 Sesión de Base de Datos (Guardias) ", padding=8)
+        frame_sesion.pack(fill=tk.X, pady=(0, 8))
+        frame_sesion.columnconfigure(0, weight=1)
+
+        self.lbl_usuario_guardia = ttk.Label(
+            frame_sesion,
+            text="👤 Usuario BD: [Sin iniciar sesión]",
+            font=("Segoe UI", 9, "bold"),
+            foreground="#C53030"
+        )
+        self.lbl_usuario_guardia.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
+
+        frame_btns_sesion = ttk.Frame(frame_sesion)
+        frame_btns_sesion.grid(row=1, column=0, columnspan=2, sticky="ew")
+
+        btn_cambiar_user = tk.Button(
+            frame_btns_sesion,
+            text="🔑 Cambiar Usuario BD",
+            bg="#2B6CB0",
+            fg="white",
+            font=("Segoe UI", 8, "bold"),
+            relief="groove",
+            cursor="hand2",
+            command=lambda: self.solicitar_login_guardias(forzar=True)
+        )
+        btn_cambiar_user.pack(side=tk.LEFT, padx=(0, 4))
+
+        btn_reset_user = tk.Button(
+            frame_btns_sesion,
+            text="🔄 Cerrar Sesion",
+            bg="#E2E8F0",
+            font=("Segoe UI", 8),
+            cursor="hand2",
+            command=self.restablecer_usuario_guardias
+        )
+        btn_reset_user.pack(side=tk.LEFT)
+
+        frame_form = ttk.LabelFrame(columna_izq, text=" ➕ Crear Nueva Guardia (con Médico Asignado) ", padding=10)
+        frame_form.pack(fill=tk.X, pady=(0, 10))
         frame_form.columnconfigure(1, weight=1)
 
         ttk.Label(frame_form, text="Fecha (DD/MM/YYYY):").grid(row=0, column=0, sticky="w", pady=4)
@@ -2413,6 +2641,7 @@ class HospitalApp(tk.Tk):
         )
         btn_eliminar.pack(side=tk.LEFT)
 
+        self.actualizar_banner_usuario_guardias()
         self.refrescar_panel_guardias()
 
     @staticmethod
@@ -2442,7 +2671,7 @@ class HospitalApp(tk.Tk):
         cursor_local = cursor
         try:
             if cursor_local is None:
-                conn_propia = obtener_conexion()
+                conn_propia = self.obtener_conexion_guardias_o_default()
                 cursor_local = conn_propia.cursor()
 
             cursor_local.execute("""
@@ -2508,7 +2737,7 @@ class HospitalApp(tk.Tk):
         conn = None
         cursor = None
         try:
-            conn = obtener_conexion()
+            conn = self.obtener_conexion_guardias_o_default()
             cursor = conn.cursor()
             opciones_medicos = self._obtener_opciones_medicos(cursor)
             sel_medico = self.cb_guardia_medico.get()
@@ -2533,6 +2762,10 @@ class HospitalApp(tk.Tk):
 
     def accion_insertar_guardia(self):
         """Crea una guardia y la asigna directamente a un médico en una sola transacción."""
+        conn = self.obtener_conexion_guardias()
+        if not conn:
+            return
+
         fecha_str = self.guardia_fecha.get().strip()
         turno = self.guardia_turno.get().strip().upper()
         med_sel = self.cb_guardia_medico.get().strip()
@@ -2540,12 +2773,14 @@ class HospitalApp(tk.Tk):
 
         if not (fecha_str and turno):
             messagebox.showwarning("Atención", "Fecha y turno son obligatorios.")
+            conn.close()
             return
         if not (med_sel and esp_sel):
             messagebox.showwarning(
                 "Médico Obligatorio",
                 "No puede existir una guardia sin un médico asignado. Selecciona un médico y una especialidad."
             )
+            conn.close()
             return
 
         try:
@@ -2553,14 +2788,13 @@ class HospitalApp(tk.Tk):
             id_especialidad = int(self._parsear_clave_combo(esp_sel))
         except ValueError:
             messagebox.showerror("Dato Inválido", "La especialidad seleccionada no tiene un ID válido.")
+            conn.close()
             return
 
         fmt = 'YYYY-MM-DD' if '-' in fecha_str else 'DD/MM/YYYY'
 
-        conn = None
         cursor = None
         try:
-            conn = obtener_conexion()
             cursor = conn.cursor()
             id_guardia_var = cursor.var(oracledb.NUMBER)
 
@@ -2577,7 +2811,7 @@ class HospitalApp(tk.Tk):
             """, [matricula, id_especialidad, nuevo_id])
 
             conn.commit()
-            msg = f"Guardia #{nuevo_id} ({turno} del {fecha_str}) creada y asignada a '{med_sel}'."
+            msg = f"Guardia #{nuevo_id} ({turno} del {fecha_str}) creada y asignada a '{med_sel}' por usuario '{self.usuario_guardias.upper()}'."
             self.log_exito(msg)
             messagebox.showinfo("Éxito", msg)
             self.refrescar_panel_guardias()
@@ -2601,7 +2835,7 @@ class HospitalApp(tk.Tk):
 
         conn = None
         try:
-            conn = obtener_conexion()
+            conn = self.obtener_conexion_guardias_o_default()
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT g.id_guardia,
@@ -2636,15 +2870,18 @@ class HospitalApp(tk.Tk):
             messagebox.showinfo("Seleccionar Guardia", "Por favor selecciona una guardia de la lista para modificar.")
             return
 
+        conn = self.obtener_conexion_guardias()
+        if not conn:
+            return
+
         valores = self.tabla_guardias.item(seleccion[0], "values")
         if not valores:
+            conn.close()
             return
         id_guardia = int(valores[0])
 
-        conn = None
         cursor = None
         try:
-            conn = obtener_conexion()
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT TO_CHAR(fecha, 'DD/MM/YYYY'), turno
@@ -2692,7 +2929,7 @@ class HospitalApp(tk.Tk):
         ]
 
         modal = tk.Toplevel(self)
-        modal.title(f"Modificar Guardia #{id_guardia}")
+        modal.title(f"Modificar Guardia #{id_guardia} (Usuario: {self.usuario_guardias.upper() if self.usuario_guardias else ''})")
         modal.configure(bg=self.COLOR_FONDO)
         modal.transient(self)
         modal.grab_set()
@@ -2844,15 +3081,17 @@ class HospitalApp(tk.Tk):
                 )
                 return
 
+            conn_save = self.obtener_conexion_guardias()
+            if not conn_save:
+                return
+
             fmt = 'YYYY-MM-DD' if '-' in fecha_nueva else 'DD/MM/YYYY'
             nuevo_set = {(a["mat"], a["id_esp"]) for a in asignaciones}
             a_eliminar = asignaciones_originales - nuevo_set
             a_insertar = nuevo_set - asignaciones_originales
 
-            conn_save = None
             cur_save = None
             try:
-                conn_save = obtener_conexion()
                 cur_save = conn_save.cursor()
 
                 cur_save.execute(f"""
@@ -2878,7 +3117,7 @@ class HospitalApp(tk.Tk):
                     raise Exception("Una guardia no puede quedar sin médicos asignados.")
 
                 conn_save.commit()
-                msg = f"Guardia #{id_guardia} modificada con éxito ({turno_nuevo} del {fecha_nueva})."
+                msg = f"Guardia #{id_guardia} modificada con éxito ({turno_nuevo} del {fecha_nueva}) por usuario '{self.usuario_guardias.upper()}'."
                 self.log_exito(msg)
                 messagebox.showinfo("Modificación Exitosa", msg, parent=modal)
                 modal.destroy()
@@ -2923,8 +3162,13 @@ class HospitalApp(tk.Tk):
             messagebox.showinfo("Seleccionar Guardia", "Por favor selecciona una guardia de la lista para eliminar.")
             return
 
+        conn = self.obtener_conexion_guardias()
+        if not conn:
+            return
+
         valores = self.tabla_guardias.item(seleccion[0], "values")
         if not valores or len(valores) < 4:
+            conn.close()
             return
         id_guardia, fecha, turno, medicos = int(valores[0]), valores[1], valores[2], valores[3]
 
@@ -2933,23 +3177,23 @@ class HospitalApp(tk.Tk):
             f"¿Deseas eliminar definitivamente la Guardia #{id_guardia}?\n\n"
             f"• Fecha: {fecha}\n"
             f"• Turno: {turno}\n"
-            f"• Médicos asignados: {medicos}\n\n"
+            f"• Médicos asignados: {medicos}\n"
+            f"• Operador BD: {self.usuario_guardias.upper()}\n\n"
             "Esta acción dará de baja la guardia y sus asignaciones en CUBIERTA_POR."
         )
         if not confirmar:
+            conn.close()
             return
 
-        conn = None
         cursor = None
         try:
-            conn = obtener_conexion()
             cursor = conn.cursor()
             cursor.execute("DELETE FROM GUARDIA WHERE id_guardia = :1", [id_guardia])
             if cursor.rowcount == 0:
                 raise Exception(f"No se encontró la guardia #{id_guardia} en la base de datos.")
             conn.commit()
 
-            msg = f"Guardia #{id_guardia} ({turno} del {fecha}) eliminada correctamente."
+            msg = f"Guardia #{id_guardia} ({turno} del {fecha}) eliminada correctamente por usuario '{self.usuario_guardias.upper()}'."
             self.log_exito(msg)
             messagebox.showinfo("Guardia Eliminada", msg)
             self.refrescar_panel_guardias()
