@@ -400,6 +400,74 @@ BEGIN
 END;
 /
 
+-- Auditoría de modificación de guardia (cuando cambia fecha o turno en GUARDIA)
+CREATE OR REPLACE TRIGGER trg_auditoria_guardia_update
+AFTER UPDATE OF fecha, turno ON GUARDIA
+FOR EACH ROW
+DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+    FOR r IN (SELECT numero_de_matricula FROM CUBIERTA_POR WHERE id_guardia = :NEW.id_guardia) LOOP
+        INSERT INTO AUDITORIA_GUARDIAS (usuario_db, fecha_operacion, tipo_operacion, numero_de_matricula, id_guardia)
+        VALUES (USER, SYSTIMESTAMP, 'UPDATE', r.numero_de_matricula, :NEW.id_guardia);
+    END LOOP;
+    COMMIT;
+END;
+/
+
+-- Regla de negocio: No se puede asignar una guardia a un médico con la misma fecha y turno
+CREATE OR REPLACE TRIGGER trg_evitar_guardia_superpuesta
+BEFORE INSERT OR UPDATE ON CUBIERTA_POR
+FOR EACH ROW
+DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+    v_fecha DATE;
+    v_turno VARCHAR2(15);
+    v_cant NUMBER;
+BEGIN
+    SELECT fecha, UPPER(turno) INTO v_fecha, v_turno
+    FROM GUARDIA
+    WHERE id_guardia = :NEW.id_guardia;
+
+    SELECT COUNT(*) INTO v_cant
+    FROM CUBIERTA_POR cp
+    JOIN GUARDIA g ON cp.id_guardia = g.id_guardia
+    WHERE cp.numero_de_matricula = :NEW.numero_de_matricula
+      AND g.fecha = v_fecha
+      AND UPPER(g.turno) = v_turno
+      AND cp.id_guardia != :NEW.id_guardia;
+
+    IF v_cant > 0 THEN
+        RAISE_APPLICATION_ERROR(-20015, 'Regla de negocio: El médico ya tiene asignada una guardia en la misma fecha y turno.');
+    END IF;
+    COMMIT;
+END;
+/
+
+-- Regla de negocio: Validar que al cambiar fecha/turno de una guardia, ningún médico asignado tenga conflicto
+CREATE OR REPLACE TRIGGER trg_validar_cambio_guardia
+BEFORE UPDATE OF fecha, turno ON GUARDIA
+FOR EACH ROW
+DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+    v_cant NUMBER;
+BEGIN
+    SELECT COUNT(*) INTO v_cant
+    FROM CUBIERTA_POR cp_actual
+    JOIN CUBIERTA_POR cp_otra ON cp_actual.numero_de_matricula = cp_otra.numero_de_matricula
+    JOIN GUARDIA g_otra ON cp_otra.id_guardia = g_otra.id_guardia
+    WHERE cp_actual.id_guardia = :NEW.id_guardia
+      AND g_otra.fecha = :NEW.fecha
+      AND UPPER(g_otra.turno) = UPPER(:NEW.turno)
+      AND g_otra.id_guardia != :NEW.id_guardia;
+
+    IF v_cant > 0 THEN
+        RAISE_APPLICATION_ERROR(-20015, 'Regla de negocio: Uno de los médicos asignados a esta guardia ya tiene otra guardia en la nueva fecha y turno.');
+    END IF;
+    COMMIT;
+END;
+/
+
 
 CREATE OR REPLACE TRIGGER trg_evitar_autoatencion
 BEFORE INSERT OR UPDATE ON INTERNACION

@@ -169,6 +169,13 @@ def traducir_error_oracle(error, contexto=None):
             "Por regla hospitalaria, solo se pueden registrar comentarios de internaciones cuyas habitaciones estén comprendidas en la ronda del recorrido.\n"
             f"[Detalle técnico: {mensaje_original}]"
         )
+    if "20015" in mensaje_mayus or "GUARDIA_SUPERPUESTA" in mensaje_mayus or "GUARDIA EN LA MISMA FECHA" in mensaje_mayus:
+        return (
+            "❌ REGLA DE NEGOCIO VIOLADA: GUARDIA SUPERPUESTA PARA EL MÉDICO (Trigger trg_evitar_guardia_superpuesta):\n"
+            "Explicación humana: El médico ya tiene asignada otra guardia en la misma fecha y turno.\n"
+            "Por regla hospitalaria y límite laboral, un médico no puede estar cubriendo dos guardias en el mismo turno del mismo día.\n"
+            f"[Detalle técnico: {mensaje_original}]"
+        )
     if "20001" in mensaje_mayus:
         return (
             "❌ FECHA DE CAMA ANTERIOR A INTERNACIÓN (Trigger trg_posee_fecha):\n"
@@ -552,35 +559,24 @@ class HospitalApp(tk.Tk):
         frame_botones_cab = ttk.Frame(frame_cabecera)
         frame_botones_cab.pack(side=tk.RIGHT)
 
-        btn_cargar_datos = tk.Button(
+        self.btn_reset_total = tk.Button(
             frame_botones_cab,
-            text="📥 Cargar Datos de Prueba (HOSPITAL.sql)",
-            bg="#2B6CB0",
+            text="⚡ RESET TOTAL (Tablas + Datos + Usuarios)",
+            bg="#9B2C2C",
             fg="white",
-            font=("Segoe UI", 9, "bold"),
+            font=("Segoe UI", 10, "bold"),
             relief="groove",
             cursor="hand2",
-            command=self.accion_cargar_datos_hospital
+            command=self.accion_reset_total_hospital
         )
-        btn_cargar_datos.pack(side=tk.LEFT, padx=5, pady=5)
+        self.btn_reset_total.pack(side=tk.LEFT, padx=5, pady=5)
 
-        btn_init_db = tk.Button(
-            frame_botones_cab,
-            text="🛠️ Crear/Reiniciar Tablas (create-table.sql)",
-            bg="#DD6B20",
-            fg="white",
-            font=("Segoe UI", 9, "bold"),
-            relief="groove",
-            cursor="hand2",
-            command=self.accion_ejecutar_script_tablas
-        )
-        btn_init_db.pack(side=tk.LEFT, padx=5, pady=5)
-
-    def ejecutar_archivo_sql(self, archivo, nombre_descriptivo):
+    def ejecutar_archivo_sql(self, archivo, nombre_descriptivo, mostrar_popup=True):
         if not os.path.exists(archivo):
             self.log_error(f"No se encontró el archivo '{archivo}' en la carpeta del proyecto.")
-            messagebox.showerror("Archivo no encontrado", f"No se encontró '{archivo}'.")
-            return
+            if mostrar_popup:
+                messagebox.showerror("Archivo no encontrado", f"No se encontró '{archivo}'.")
+            return False
 
         conn = None
         cursor = None
@@ -595,8 +591,9 @@ class HospitalApp(tk.Tk):
             sentencias = parsear_script_sql(contenido)
             errores = 0
             exitos = 0
+            total = len(sentencias)
 
-            for sql in sentencias:
+            for idx, sql in enumerate(sentencias, 1):
                 sql = sql.strip()
                 if sql:
                     try:
@@ -604,22 +601,36 @@ class HospitalApp(tk.Tk):
                         exitos += 1
                     except oracledb.DatabaseError as e:
                         error_obj, = e.args
-                        if error_obj.code == 942:  # ORA-00942: tabla no existe en DROP
+                        if error_obj.code in (942, 1918):  # ORA-00942: tabla no existe, ORA-01918: usuario no existe en DROP
+                            pass
+                        elif error_obj.code == 1031 and "DROP USER" in sql.upper():
+                            # ORA-01031: privilegios insuficientes en DROP USER si no es DBA
                             pass
                         else:
                             errores += 1
                             self.log_error(f"Sentencia con aviso [{error_obj.code}]: {sql[:40]}... -> {traducir_error_oracle(e)}")
 
+                # Mantener la ventana viva y respondiendo a Windows en tiempo real
+                if idx % 3 == 0 or idx == total:
+                    try:
+                        self.update()
+                    except Exception:
+                        pass
+
             conn.commit()
             msg = f"{nombre_descriptivo} finalizado.\n• Exitosas: {exitos}\n• Avisos no críticos: {errores}"
             self.log_exito(msg)
-            messagebox.showinfo("Operación Finalizada", msg)
+            if mostrar_popup:
+                messagebox.showinfo("Operación Finalizada", msg)
             self.cargar_camas_libres()
             self.refrescar_panel_guardias()
+            return True
 
         except Exception as e:
             self.log_error(f"Error crítico al procesar '{archivo}':\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error", traducir_error_oracle(e))
+            if mostrar_popup:
+                messagebox.showerror("Error", traducir_error_oracle(e))
+            return False
         finally:
             if cursor:
                 cursor.close()
@@ -629,10 +640,28 @@ class HospitalApp(tk.Tk):
     def accion_ejecutar_script_tablas(self):
         respuesta = messagebox.askyesno(
             "Confirmar Inicialización", 
-            "¿Deseas ejecutar 'create-table.sql'?\nEsto borrará (DROP) y volverá a crear todas las tablas, triggers y stored procedures en Oracle."
+            "¿Deseas ejecutar 'create-table.sql'?\nEsto borrará (DROP) y volverá a crear todas las tablas, triggers y stored procedures en Oracle.\n\n(Además se restaurarán automáticamente los usuarios y permisos de 'create-users.sql')."
         )
         if respuesta:
-            self.ejecutar_archivo_sql("create-table.sql", "Creación de Esquema y Triggers")
+            ok = self.ejecutar_archivo_sql("create-table.sql", "Creación de Esquema y Triggers", mostrar_popup=False)
+            if ok:
+                msg_final = "✅ Tablas, triggers y procedimientos recreados con éxito."
+                if os.path.exists("create-users.sql"):
+                    self.log_info("Restaurando usuarios y permisos para guardias ('create-users.sql')...")
+                    ok_u = self.ejecutar_archivo_sql("create-users.sql", "Usuarios y Permisos de Guardias", mostrar_popup=False)
+                    if ok_u:
+                        msg_final += "\n✅ Permisos de usuarios médicos ('33333333', '44444444') restaurados correctamente."
+                messagebox.showinfo("Reinicio Completo", msg_final)
+                self.cargar_camas_libres()
+                self.refrescar_panel_guardias()
+
+    def accion_ejecutar_script_usuarios(self):
+        respuesta = messagebox.askyesno(
+            "Restaurar Usuarios y Permisos",
+            "¿Deseas ejecutar 'create-users.sql'?\nEsto volverá a otorgar permisos de lectura/edición a los usuarios médicos ('33333333' y '44444444')."
+        )
+        if respuesta:
+            self.ejecutar_archivo_sql("create-users.sql", "Usuarios y Permisos de Guardias")
 
     def accion_cargar_datos_hospital(self):
         respuesta = messagebox.askyesno(
@@ -641,6 +670,86 @@ class HospitalApp(tk.Tk):
         )
         if respuesta:
             self.ejecutar_archivo_sql("HOSPITAL.sql", "Carga de Datos de Prueba (HOSPITAL.sql)")
+
+    def refrescar_toda_la_interfaz(self):
+        """Refresca todos los listados y combos de la interfaz tras una recarga de datos."""
+        try:
+            self.cargar_camas_libres()
+        except Exception:
+            pass
+        try:
+            self.refrescar_panel_guardias()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'cargar_lista_pacientes'):
+                self.cargar_lista_pacientes()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'cargar_lista_medicos'):
+                self.cargar_lista_medicos()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'cargar_lista_habitaciones'):
+                self.cargar_lista_habitaciones()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'cargar_todas_las_camas'):
+                self.cargar_todas_las_camas()
+        except Exception:
+            pass
+
+    def accion_reset_total_hospital(self):
+        respuesta = messagebox.askyesno(
+            "⚡ Reset Total de Base de Datos",
+            "¿Deseas realizar un RESET COMPLETO de la Base de Datos?\n\n"
+            "Esta operación ejecutará en secuencia:\n"
+            "1. 'create-table.sql' (Elimina tablas viejas, crea tablas nuevas, triggers y stored procedures).\n"
+            "2. 'HOSPITAL.sql' (Carga todos los datos de prueba oficiales).\n"
+            "3. 'create-users.sql' (Crea usuarios '33333333' y '44444444' y les otorga todos los permisos y sinónimos).\n\n"
+            "¿Deseas continuar?"
+        )
+        if not respuesta:
+            return
+
+        if hasattr(self, 'btn_reset_total'):
+            self.btn_reset_total.config(state="disabled", text="⏳ Ejecutando Reset Total...")
+            self.update()
+
+        try:
+            self.log_info("Iniciando RESET COMPLETO del Hospital (Paso 1/3: create-table.sql)...")
+            ok1 = self.ejecutar_archivo_sql("create-table.sql", "1/3 Creación de Esquema y Triggers", mostrar_popup=False)
+            if not ok1:
+                messagebox.showerror("Error en Reset", "Falló la creación de tablas en 'create-table.sql'. Se detuvo el proceso.")
+                return
+
+            self.log_info("Continuando RESET COMPLETO (Paso 2/3: HOSPITAL.sql)...")
+            ok2 = self.ejecutar_archivo_sql("HOSPITAL.sql", "2/3 Carga de Datos de Prueba", mostrar_popup=False)
+            if not ok2:
+                self.log_error("Hubo advertencias al cargar datos en 'HOSPITAL.sql'. Continuando con usuarios...")
+
+            self.log_info("Continuando RESET COMPLETO (Paso 3/3: create-users.sql)...")
+            ok3 = self.ejecutar_archivo_sql("create-users.sql", "3/3 Creación de Usuarios y Permisos", mostrar_popup=False)
+
+            self.refrescar_toda_la_interfaz()
+
+            msg_exito = (
+                "🎉 ¡RESET COMPLETO FINALIZADO CON ÉXITO!\n\n"
+                "✅ 1. Tablas, triggers y procedimientos recreados (create-table.sql).\n"
+                "✅ 2. Datos de prueba oficiales cargados (HOSPITAL.sql).\n"
+                "✅ 3. Usuarios médicos ('33333333' y '44444444') creados con todos sus permisos y sinónimos (create-users.sql).\n\n"
+                "La base de datos y la interfaz están 100% listas para usar."
+            )
+            self.log_exito("RESET COMPLETO finalizado exitosamente. Tablas, datos y usuarios listos.")
+            messagebox.showinfo("Reset Completo Exitoso", msg_exito)
+
+        finally:
+            if hasattr(self, 'btn_reset_total'):
+                self.btn_reset_total.config(state="normal", text="⚡ RESET TOTAL (Tablas + Datos + Usuarios)")
+                self.update()
 
     # --------------------------------------------------------------------------
     # PESTAÑAS PRINCIPALES
@@ -2595,7 +2704,17 @@ class HospitalApp(tk.Tk):
             cursor="hand2",
             command=self.restablecer_usuario_guardias
         )
-        btn_reset_user.pack(side=tk.LEFT)
+        btn_reset_user.pack(side=tk.LEFT, padx=(0, 4))
+
+        btn_reaplicar_permisos = tk.Button(
+            frame_btns_sesion,
+            text="🛡️ Reaplicar Permisos BD",
+            bg="#E2E8F0",
+            font=("Segoe UI", 8),
+            cursor="hand2",
+            command=self.accion_ejecutar_script_usuarios
+        )
+        btn_reaplicar_permisos.pack(side=tk.LEFT)
 
         frame_form = ttk.LabelFrame(columna_izq, text=" ➕ Crear Nueva Guardia (con Médico Asignado) ", padding=10)
         frame_form.pack(fill=tk.X, pady=(0, 10))
@@ -2954,9 +3073,15 @@ class HospitalApp(tk.Tk):
         if not conn:
             return
 
-        valores = self.tabla_guardias.item(seleccion[0], "values")
+        try:
+            valores = self.tabla_guardias.item(seleccion[0], "values")
+        except Exception:
+            valores = None
+
         if not valores:
-            conn.close()
+            if conn:
+                conn.close()
+            messagebox.showwarning("Atención", "No se pudo obtener la guardia seleccionada.")
             return
         id_guardia = int(valores[0])
 
@@ -3246,9 +3371,14 @@ class HospitalApp(tk.Tk):
         if not conn:
             return
 
-        valores = self.tabla_guardias.item(seleccion[0], "values")
+        try:
+            valores = self.tabla_guardias.item(seleccion[0], "values")
+        except Exception:
+            valores = None
+
         if not valores or len(valores) < 4:
             conn.close()
+            messagebox.showwarning("Atención", "No se pudo obtener la guardia seleccionada.")
             return
         id_guardia, fecha, turno, medicos = int(valores[0]), valores[1], valores[2], valores[3]
 
