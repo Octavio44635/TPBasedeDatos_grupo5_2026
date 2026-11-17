@@ -104,13 +104,14 @@ def parsear_script_sql(contenido):
     return bloques
 
 # ==============================================================================
-# TRADUCTOR DE ERRORES DE ORACLE A LENGUAJE HUMANO (TRIGGERS, CHECKS, FKs)
+# TRADUCTOR DE ERRORES DE ORACLE A LENGUAJE HUMANO (REGLAS DE NEGOCIO, CHECKS, FKs)
 # ==============================================================================
-def traducir_error_oracle(error, contexto=None):
+def traducir_error_oracle(error, incluir_tecnico=False, contexto=None):
     """
-    Analiza la excepción de Oracle y devuelve una explicación en lenguaje humano
-    súper detallista, mapeando cada código de Trigger (-20001 a -20010),
-    restricciones CHECK, UNIQUE, FK, NOT NULL y errores de compilación.
+    Analiza la excepción de Oracle y devuelve una explicación en lenguaje humano.
+    Si incluir_tecnico es False (por defecto, para popups y cuadros de diálogo), únicamente muestra
+    'REGLA DE NEGOCIO VIOLADA: <MOTIVO>' y la explicación humana sin nombres de triggers ni detalles técnicos.
+    Si incluir_tecnico es True (para la terminal del front / log inferior), agrega el detalle técnico al final.
     """
     mensaje_original = str(error)
     codigo_oracle = None
@@ -126,349 +127,276 @@ def traducir_error_oracle(error, contexto=None):
     mensaje_original = re.sub(r'\s*Help:\s*https?://\S+', '', mensaje_original, flags=re.IGNORECASE).strip()
     mensaje_mayus = mensaje_original.upper()
 
+    titulo = None
+    explicacion = None
+
     # --------------------------------------------------------------------------
     # 1. ERRORES LANZADOS POR TRIGGERS DEL PROYECTO (RAISE_APPLICATION_ERROR)
     # --------------------------------------------------------------------------
     if "20008" in mensaje_mayus or "AUTOATENCION" in mensaje_mayus or "AUTO-ATENCION" in mensaje_mayus or "AUTOATENCIÓN" in mensaje_mayus:
-        return (
-            "❌ REGLA DE NEGOCIO VIOLADA: UN MÉDICO NO PUEDE AUTO-ATENDERSE (Trigger trg_evitar_autoatencion):\n"
-            "Explicación humana: El médico asignado tiene el mismo número de DNI que el paciente internado.\n"
-            "Por regla de ética y control médico del hospital, un médico no puede ser el profesional a cargo de su propia internación.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: UN MÉDICO NO PUEDE AUTO-ATENDERSE"
+        explicacion = (
+            "El médico asignado tiene el mismo número de DNI que el paciente internado.\n"
+            "Por regla de ética y control médico del hospital, un médico no puede ser el profesional a cargo de su propia internación."
         )
-    if "20010" in mensaje_mayus or "INTERNACION_MULTIPLE" in mensaje_mayus or "INTERNACION ACTIVA" in mensaje_mayus or "INTERNACIÓN ACTIVA" in mensaje_mayus:
-        return (
-            "❌ REGLA DE NEGOCIO VIOLADA: PACIENTE CON INTERNACIÓN ACTIVA (Trigger trg_evitar_internacion_multiple):\n"
-            "Explicación humana: El paciente ya cuenta con una internación en curso sin fecha de alta médica.\n"
-            "Por regla del hospital, no se puede registrar una nueva internación para un paciente que ya se encuentra actualmente internado.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "20010" in mensaje_mayus or "INTERNACION_MULTIPLE" in mensaje_mayus or "INTERNACION ACTIVA" in mensaje_mayus or "INTERNACIÓN ACTIVA" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: PACIENTE CON INTERNACIÓN ACTIVA"
+        explicacion = (
+            "El paciente ya cuenta con una internación en curso sin fecha de alta médica.\n"
+            "Por regla del hospital, no se puede registrar una nueva internación para un paciente que ya se encuentra actualmente internado."
         )
-    if "20011" in mensaje_mayus or "FECHA_INICIO" in mensaje_mayus or "VALIDAR_FECHA_INICIO" in mensaje_mayus:
-        return (
-            "❌ REGLA DE NEGOCIO VIOLADA: FECHA DE INICIO EN EL FUTURO (Trigger trg_validar_fecha_inicio_int):\n"
-            "Explicación humana: La fecha de inicio de la internación no puede ser mayor a la fecha actual del sistema (SYSDATE).\n"
-            "Por regla del hospital, no se pueden registrar internaciones con fecha futura.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "20011" in mensaje_mayus or "FECHA_INICIO" in mensaje_mayus or "VALIDAR_FECHA_INICIO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: FECHA DE INICIO EN EL FUTURO"
+        explicacion = (
+            "La fecha de inicio de la internación no puede ser mayor a la fecha actual del sistema (SYSDATE).\n"
+            "Por regla del hospital, no se pueden registrar internaciones con fecha futura."
         )
-    if "20012" in mensaje_mayus or "INTERNACIÓN FINALIZADA" in mensaje_mayus or "INTERNACION FINALIZADA" in mensaje_mayus:
-        return (
-            "❌ REGLA DE NEGOCIO VIOLADA: INTERNACIÓN FINALIZADA (Trigger trg_comentario_ronda):\n"
-            "Explicación humana: No se pueden agregar comentarios ni evoluciones médicas a una internación que ya ha sido finalizada con alta médica.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "20012" in mensaje_mayus or "INTERNACIÓN FINALIZADA" in mensaje_mayus or "INTERNACION FINALIZADA" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: INTERNACIÓN FINALIZADA"
+        explicacion = (
+            "No se pueden agregar comentarios ni evoluciones médicas a una internación que ya ha sido finalizada con alta médica."
         )
-    if "20013" in mensaje_mayus or "SIN HABITACIÓN" in mensaje_mayus or "SIN HABITACION" in mensaje_mayus:
-        return (
-            "❌ REGLA DE NEGOCIO VIOLADA: PACIENTE SIN HABITACIÓN (Trigger trg_comentario_ronda):\n"
-            "Explicación humana: La internación indicada no cuenta con un registro de habitación y cama asignada en POSEE.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "20013" in mensaje_mayus or "SIN HABITACIÓN" in mensaje_mayus or "SIN HABITACION" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: PACIENTE SIN HABITACIÓN ASIGNADA"
+        explicacion = (
+            "La internación indicada no cuenta con un registro de habitación y cama asignada en POSEE."
         )
-    if "20014" in mensaje_mayus or "ESTÉN EN SU RONDA" in mensaje_mayus or "ESTEN EN SU RONDA" in mensaje_mayus or "RONDA DEL RECORRIDO" in mensaje_mayus:
-        return (
-            "❌ REGLA DE NEGOCIO VIOLADA: HABITACIÓN FUERA DE LA RONDA (Trigger trg_comentario_ronda):\n"
-            "Explicación humana: La habitación actual del paciente no forma parte de la ronda asignada a este recorrido médico.\n"
-            "Por regla hospitalaria, solo se pueden registrar comentarios de internaciones cuyas habitaciones estén comprendidas en la ronda del recorrido.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "20014" in mensaje_mayus or "ESTÉN EN SU RONDA" in mensaje_mayus or "ESTEN EN SU RONDA" in mensaje_mayus or "RONDA DEL RECORRIDO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: HABITACIÓN FUERA DE LA RONDA"
+        explicacion = (
+            "La habitación actual del paciente no forma parte de la ronda asignada a este recorrido médico.\n"
+            "Por regla hospitalaria, solo se pueden registrar comentarios de internaciones cuyas habitaciones estén comprendidas en la ronda del recorrido."
         )
-    if "20015" in mensaje_mayus or "GUARDIA_SUPERPUESTA" in mensaje_mayus or "GUARDIA EN LA MISMA FECHA" in mensaje_mayus:
-        return (
-            "❌ REGLA DE NEGOCIO VIOLADA: GUARDIA SUPERPUESTA PARA EL MÉDICO (Trigger trg_evitar_guardia_superpuesta):\n"
-            "Explicación humana: El médico ya tiene asignada otra guardia en la misma fecha y turno.\n"
-            "Por regla hospitalaria y límite laboral, un médico no puede estar cubriendo dos guardias en el mismo turno del mismo día.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "TRG_EVITAR_GUARDIA_SUPERPUESTA" in mensaje_mayus and (codigo_oracle == 1403 or "01403" in mensaje_mayus or "NO DATA FOUND" in mensaje_mayus or "NO SE HA ENCONTRADO" in mensaje_mayus):
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: ERROR EN CABECERA DE GUARDIA"
+        explicacion = (
+            "La transacción del disparador no pudo encontrar la cabecera de la guardia (ORA-01403: No se ha encontrado ningún dato).\n"
+            "Esto ocurre cuando la cabecera de la guardia no está confirmada (COMMIT) en la BD antes de insertar en CUBIERTA_POR."
         )
-    if "20001" in mensaje_mayus:
-        return (
-            "❌ FECHA DE CAMA ANTERIOR A INTERNACIÓN (Trigger trg_posee_fecha):\n"
-            "Explicación humana: La fecha y hora en que se asigna la cama no puede ser anterior a la fecha en que inició la internación.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "20015" in mensaje_mayus or "GUARDIA_SUPERPUESTA" in mensaje_mayus or "GUARDIA EN LA MISMA FECHA" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: GUARDIA SUPERPUESTA PARA EL MÉDICO"
+        explicacion = (
+            "El médico ya tiene asignada otra guardia en la misma fecha y turno.\n"
+            "Por regla hospitalaria y límite laboral, un médico no puede estar cubriendo dos guardias en el mismo turno del mismo día."
         )
-    if "20002" in mensaje_mayus:
-        return (
-            "❌ FECHA DE CAMA POSTERIOR A ALTA (Trigger trg_posee_fecha):\n"
-            "Explicación humana: La asignación de cama no puede tener una fecha posterior al momento en que el paciente recibió el alta médica.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "20017" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: CAMA INEXISTENTE"
+        explicacion = "La habitación o cama seleccionada no existe en la base de datos."
+    elif "20019" in mensaje_mayus or "YA SE ENCUENTRA OCUPADA" in mensaje_mayus or "NO ESTÁ DISPONIBLE" in mensaje_mayus or "NO ESTA DISPONIBLE" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: CAMA NO DISPONIBLE"
+        explicacion = (
+            "La cama seleccionada no se encuentra disponible (ya está asignada u ocupada por otro paciente).\n"
+            "Por regla de gestión hospitalaria, no se puede internar ni trasladar a un paciente a una cama que no esté en estado LIBRE."
         )
-    if "20003" in mensaje_mayus:
-        return (
-            "❌ MÉDICO NO DISPUESTO A GUARDIA (Trigger trg_medico_dispuesto):\n"
-            "Explicación humana: En la tabla TIENE se registró que este médico NO está dispuesto a realizar guardias para esta especialidad.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "20021" in mensaje_mayus or "VACACIONES" in mensaje_mayus or "PERÍODO DE VACACIONES" in mensaje_mayus or "PERIODO DE VACACIONES" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO DE VACACIONES"
+        explicacion = (
+            "El médico seleccionado se encuentra de vacaciones en la fecha programada para la guardia.\n"
+            "Por normativa laboral y descanso médico obligatorio, no se pueden asignar guardias a profesionales durante su período de vacaciones."
         )
-    if "TRG_MEDICO_DISPUESTO" in mensaje_mayus and (codigo_oracle == 1403 or "01403" in mensaje_mayus):
-        return (
-            "❌ ESPECIALIDAD NO REGISTRADA PARA EL MÉDICO (Trigger trg_medico_dispuesto):\n"
-            "Explicación humana: El médico seleccionado no tiene registrada esa especialidad en la tabla TIENE, por lo que no puede cubrirla en una guardia.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "20001" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: FECHA DE CAMA ANTERIOR A INTERNACIÓN"
+        explicacion = (
+            "La fecha y hora en que se asigna la cama no puede ser anterior a la fecha en que inició la internación."
         )
-    if "20005" in mensaje_mayus:
-        return (
-            "❌ LÍMITE DE GUARDIAS MENSUALES SUPERADO (Trigger trg_limite_guardias):\n"
-            "Explicación humana: El médico ya alcanzó o superó la cantidad máxima de guardias que indicó estar dispuesto a realizar en este mes.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "20002" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: FECHA DE CAMA POSTERIOR A ALTA"
+        explicacion = (
+            "La asignación de cama no puede tener una fecha posterior al momento en que el paciente recibió el alta médica."
         )
-    if "20006" in mensaje_mayus:
-        return (
-            "❌ ROL DE PACIENTE ASIGNADO A GUARDIA (Trigger trg_validar_rol_guardia):\n"
-            "Explicación humana: No se puede asignar una guardia médica a una persona que en el sistema está registrada con el rol de 'PACIENTE'.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "20003" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO NO DISPUESTO A GUARDIA"
+        explicacion = (
+            "En la tabla TIENE se registró que este médico NO está dispuesto a realizar guardias para esta especialidad."
         )
-    if "20007" in mensaje_mayus:
-        return (
-            "❌ INFORMACIÓN PERSONAL DEL MÉDICO NO ENCONTRADA (Trigger trg_validar_rol_guardia):\n"
-            "Explicación humana: No se encontró la persona asociada a la matrícula médica al intentar validar la guardia.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "TRG_MEDICO_DISPUESTO" in mensaje_mayus and (codigo_oracle == 1403 or "01403" in mensaje_mayus):
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: ESPECIALIDAD NO REGISTRADA PARA EL MÉDICO"
+        explicacion = (
+            "El médico seleccionado no tiene registrada esa especialidad en la tabla TIENE, por lo que no puede cubrirla en una guardia."
         )
-    if "20009" in mensaje_mayus:
-        return (
-            "❌ FECHA DE INICIO INVÁLIDA (Trigger trg_validar_fecha_inicio):\n"
-            "Explicación humana: La fecha de inicio de la internación no puede ser una fecha futura posterior a la fecha actual del sistema.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "20005" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: LÍMITE DE GUARDIAS MENSUALES SUPERADO"
+        explicacion = (
+            "El médico ya alcanzó o superó la cantidad máxima de guardias que indicó estar dispuesto a realizar en este mes."
+        )
+    elif "20006" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: ROL INVÁLIDO PARA GUARDIA MÉDICA"
+        explicacion = (
+            "No se puede asignar una guardia médica a una persona que en el sistema está registrada con el rol de 'PACIENTE'."
+        )
+    elif "20007" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: INFORMACIÓN PERSONAL DEL MÉDICO NO ENCONTRADA"
+        explicacion = (
+            "No se encontró la persona asociada a la matrícula médica al intentar validar la guardia."
+        )
+    elif "20009" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: FECHA DE INICIO INVÁLIDA"
+        explicacion = (
+            "La fecha de inicio de la internación no puede ser una fecha futura posterior a la fecha actual del sistema."
         )
 
     # --------------------------------------------------------------------------
     # 2. TRIGGER INVÁLIDO O ERROR DE COMPILACIÓN (ORA-04098)
     # --------------------------------------------------------------------------
-    if codigo_oracle == 4098 or "ORA-04098" in mensaje_mayus:
-        return (
-            "❌ DISPARADOR (TRIGGER) INVÁLIDO EN ORACLE:\n"
-            "Explicación humana: Uno de los triggers de la base de datos se compiló con errores de sintaxis y quedó en estado INVÁLIDO.\n"
+    elif codigo_oracle == 4098 or "ORA-04098" in mensaje_mayus:
+        titulo = "❌ ERROR EN DISPARADOR DE BASE DE DATOS"
+        explicacion = (
+            "Uno de los disparadores (triggers) de la base de datos se compiló con errores de sintaxis y quedó en estado INVÁLIDO.\n"
             "• Causa típica: El script SQL se ejecutó cortando el código por ';' en lugar de compilarse completo con la barra '/'.\n"
-            "• Solución: Haz clic en el botón 'Crear/Reiniciar Tablas' para que la app recompile todos los triggers con el delimitador '/' correcto.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+            "• Solución: Haz clic en el botón 'Crear/Reiniciar Tablas' para que la app recompile todos los triggers con el delimitador '/' correcto."
         )
 
     # --------------------------------------------------------------------------
     # 3. REGLAS CHECK ESPECÍFICAS (ORA-02290)
     # --------------------------------------------------------------------------
-    if "CHK_MEDICO_CUIL_DNI" in mensaje_mayus:
-        return (
-            "❌ EL CUIL NO COINCIDE CON EL DNI DEL MÉDICO (Regla de Integridad):\n"
-            "Explicación humana: Los 8 dígitos del medio del CUIL (posiciones 3 a 10) deben ser "
-            "exactamente iguales al DNI del médico.\n"
-            "• Ejemplo: Si el DNI es '38123456', el CUIL debe ser '20381234563' o '27381234564'.\n"
-            f"[Detalle técnico: {mensaje_original}]"
+    elif "CHK_MEDICO_CUIL_DNI" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: EL CUIL NO COINCIDE CON EL DNI DEL MÉDICO"
+        explicacion = (
+            "Los 8 dígitos del medio del CUIL (posiciones 3 a 10) deben ser exactamente iguales al DNI del médico.\n"
+            "• Ejemplo: Si el DNI es '38123456', el CUIL debe ser '20381234563' o '27381234564'."
         )
-    if "CHK_PACIENTE_SEXO" in mensaje_mayus:
-        return (
-            "❌ SEXO DEL PACIENTE NO VÁLIDO (Regla CHECK):\n"
-            "Explicación humana: El sistema solo permite registrar los valores 'MASCULINO', 'FEMENINO' u 'OTRO'.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "CHK_HABITACION_ORIENTACION" in mensaje_mayus:
-        return (
-            "❌ ORIENTACIÓN DE HABITACIÓN NO VÁLIDA (Regla CHECK):\n"
-            "Explicación humana: La orientación de la habitación solo puede ser 'Norte', 'Sur', 'Este' u 'Oeste'.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "CHK_CAMA_NRO" in mensaje_mayus:
-        return (
-            "❌ NÚMERO DE CAMA INVÁLIDO (Regla CHECK):\n"
-            "Explicación humana: El número de cama debe ser un número entero mayor o igual a 1 (no se permiten números negativos ni la cama 0).\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "CHK_CAMA_ESTADO" in mensaje_mayus:
-        return (
-            "❌ ESTADO DE CAMA INVÁLIDO (Regla CHECK):\n"
-            "Explicación humana: Una cama en el hospital solo puede estar en estado 'LIBRE' u 'OCUPADA'.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "CHK_GUARDIAS_MAX" in mensaje_mayus:
-        return (
-            "❌ CANTIDAD DE GUARDIAS NO PERMITIDA (Regla CHECK):\n"
-            "Explicación humana: Las guardias máximas mensuales que un médico puede aceptar deben ser un número mayor o igual a 0.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "CHK_RONDA_TURNO" in mensaje_mayus:
-        return (
-            "❌ TURNO DE RONDA NO VÁLIDO (Regla CHECK):\n"
-            "Explicación humana: El turno asignado no es válido. Los turnos permitidos son 1, 2, 3 o 4.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "CHK_RONDA_DIA" in mensaje_mayus:
-        return (
-            "❌ DÍA DE LA SEMANA INVÁLIDO (Regla CHECK):\n"
-            "Explicación humana: El día de la ronda debe ser válido (LUNES a DOMINGO).\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "CHK_INTERNACION_FECHAS" in mensaje_mayus:
-        return (
-            "❌ FECHAS DE INTERNACIÓN INCOHERENTES (Regla CHECK):\n"
-            "Explicación humana: La fecha de finalización del alta médica no puede ser anterior a la fecha en que el paciente fue internado.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "CHK_VACACION_FECHAS" in mensaje_mayus:
-        return (
-            "❌ PERÍODO DE VACACIONES INVÁLIDO (Regla CHECK):\n"
-            "Explicación humana: La fecha de fin de vacaciones debe ser posterior a la fecha de inicio.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "CHK_GUARDIA_TURNO" in mensaje_mayus:
-        return (
-            "❌ TURNO DE GUARDIA INVÁLIDO (Regla CHECK):\n"
-            "Explicación humana: Los turnos de guardia solo pueden ser 'MAÑANA', 'TARDE' o 'NOCHE'.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
+    elif "CHK_PACIENTE_SEXO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: SEXO DEL PACIENTE NO VÁLIDO"
+        explicacion = "El sistema solo permite registrar los valores 'MASCULINO', 'FEMENINO' u 'OTRO'."
+    elif "CHK_HABITACION_ORIENTACION" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: ORIENTACIÓN DE HABITACIÓN NO VÁLIDA"
+        explicacion = "La orientación de la habitación solo puede ser 'Norte', 'Sur', 'Este' u 'Oeste'."
+    elif "CHK_CAMA_NRO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: NÚMERO DE CAMA INVÁLIDO"
+        explicacion = "El número de cama debe ser un número entero mayor o igual a 1 (no se permiten números negativos ni la cama 0)."
+    elif "CHK_CAMA_ESTADO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: ESTADO DE CAMA INVÁLIDO"
+        explicacion = "Una cama en el hospital solo puede estar en estado 'LIBRE' u 'OCUPADA'."
+    elif "CHK_GUARDIAS_MAX" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: CANTIDAD DE GUARDIAS NO PERMITIDA"
+        explicacion = "Las guardias máximas mensuales que un médico puede aceptar deben ser un número mayor o igual a 0."
+    elif "CHK_RONDA_TURNO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: TURNO DE RONDA NO VÁLIDO"
+        explicacion = "El turno asignado no es válido. Los turnos permitidos son 1, 2, 3 o 4."
+    elif "CHK_RONDA_DIA" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: DÍA DE LA SEMANA INVÁLIDO"
+        explicacion = "El día de la ronda debe ser válido (LUNES a DOMINGO)."
+    elif "CHK_INTERNACION_FECHAS" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: FECHAS DE INTERNACIÓN INCOHERENTES"
+        explicacion = "La fecha de finalización del alta médica no puede ser anterior a la fecha en que el paciente fue internado."
+    elif "CHK_VACACION_FECHAS" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: PERÍODO DE VACACIONES INVÁLIDO"
+        explicacion = "La fecha de fin de vacaciones debe ser posterior a la fecha de inicio."
+    elif "CHK_GUARDIA_TURNO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: TURNO DE GUARDIA INVÁLIDO"
+        explicacion = "Los turnos de guardia solo pueden ser 'MAÑANA', 'TARDE' o 'NOCHE'."
 
     # --------------------------------------------------------------------------
     # 4. CLAVES DUPLICADAS (ORA-00001)
     # --------------------------------------------------------------------------
-    if "PK_PERSONA" in mensaje_mayus:
-        return (
-            "❌ DNI YA REGISTRADO (Dato Duplicado):\n"
-            "Explicación humana: Ya existe una persona registrada con ese mismo número de DNI.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "PK_PACIENTE" in mensaje_mayus:
-        return (
-            "❌ PACIENTE YA REGISTRADO (Dato Duplicado):\n"
-            "Explicación humana: Este paciente ya se encuentra dado de alta en la base de datos.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "PK_MEDICO" in mensaje_mayus:
-        return (
-            "❌ MATRÍCULA MÉDICA DUPLICADA (Dato Duplicado):\n"
-            "Explicación humana: Ya existe un médico registrado con esa misma matrícula profesional.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "UQ_MEDICO_CUIL" in mensaje_mayus:
-        return (
-            "❌ CUIL DE MÉDICO DUPLICADO (Dato Duplicado):\n"
-            "Explicación humana: Ya existe otro médico registrado con ese mismo número de CUIL.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "UQ_MEDICO_DNI" in mensaje_mayus:
-        return (
-            "❌ DNI YA ASIGNADO A UN MÉDICO (Dato Duplicado):\n"
-            "Explicación humana: Ese DNI ya está registrado como médico en el hospital.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "PK_CAMA" in mensaje_mayus:
-        return (
-            "❌ CAMA YA EXISTENTE EN ESTA HABITACIÓN (Dato Duplicado):\n"
-            "Explicación humana: Esa habitación ya tiene registrada una cama con ese mismo número.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "UQ_SECTOR_NOMBRE" in mensaje_mayus:
-        return (
-            "❌ NOMBRE DE SECTOR REPETIDO (Dato Duplicado):\n"
-            "Explicación humana: Ya existe un sector con ese mismo nombre en el hospital.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "PK_COMPUESTA_POR" in mensaje_mayus:
-        return (
-            "❌ RONDA YA VINCULADA (Dato Duplicado):\n"
-            "Explicación humana: Esta habitación ya tiene asignada esa ronda para ese día de la semana.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "PK_CUBIERTA_POR" in mensaje_mayus:
-        return (
-            "❌ GUARDIA YA ASIGNADA AL MÉDICO (Dato Duplicado):\n"
-            "Explicación humana: Este médico ya está asignado a esa guardia para esa misma especialidad.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
+    elif "PK_PERSONA" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: DNI YA REGISTRADO"
+        explicacion = "Ya existe una persona registrada con ese mismo número de DNI."
+    elif "PK_PACIENTE" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: PACIENTE YA REGISTRADO"
+        explicacion = "Este paciente ya se encuentra dado de alta en la base de datos."
+    elif "PK_MEDICO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MATRÍCULA MÉDICA DUPLICADA"
+        explicacion = "Ya existe un médico registrado con esa misma matrícula profesional."
+    elif "UQ_MEDICO_CUIL" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: CUIL DE MÉDICO DUPLICADO"
+        explicacion = "Ya existe otro médico registrado con ese mismo número de CUIL."
+    elif "UQ_MEDICO_DNI" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: DNI YA ASIGNADO A UN MÉDICO"
+        explicacion = "Ese DNI ya está registrado como médico en el hospital."
+    elif "PK_CAMA" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: CAMA YA EXISTENTE EN ESTA HABITACIÓN"
+        explicacion = "Esa habitación ya tiene registrada una cama con ese mismo número."
+    elif "UQ_SECTOR_NOMBRE" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: NOMBRE DE SECTOR REPETIDO"
+        explicacion = "Ya existe un sector con ese mismo nombre en el hospital."
+    elif "PK_COMPUESTA_POR" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: RONDA YA VINCULADA"
+        explicacion = "Esta habitación ya tiene asignada esa ronda para ese día de la semana."
+    elif "PK_CUBIERTA_POR" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: GUARDIA YA ASIGNADA AL MÉDICO"
+        explicacion = "Este médico ya está asignado a esa guardia para esa misma especialidad."
 
     # --------------------------------------------------------------------------
     # 5. CLAVES FORÁNEAS (ORA-02291 - FOREIGN KEY INEXISTENTE)
     # --------------------------------------------------------------------------
-    if "FK_INTERNACION_PACIENTE" in mensaje_mayus:
-        return (
-            "❌ PACIENTE NO ENCONTRADO:\n"
-            "Explicación humana: El DNI ingresado no corresponde a ningún paciente registrado en la base de datos.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "FK_INTERNACION_MEDICO" in mensaje_mayus:
-        return (
-            "❌ MÉDICO PRINCIPAL NO ENCONTRADO:\n"
-            "Explicación humana: La matrícula médica ingresada no existe en la base de datos.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "FK_HABITACION_SECTOR" in mensaje_mayus:
-        return (
-            "❌ SECTOR NO ENCONTRADO:\n"
-            "Explicación humana: El sector seleccionado no existe en la base de datos.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "FK_CAMA_HABITACION" in mensaje_mayus:
-        return (
-            "❌ HABITACIÓN NO ENCONTRADA:\n"
-            "Explicación humana: El ID de habitación ingresado no existe en el hospital.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "FK_CUBIERTA_MEDICO" in mensaje_mayus:
-        return (
-            "❌ MÉDICO NO ENCONTRADO:\n"
-            "Explicación humana: La matrícula médica seleccionada no existe en la base de datos.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "FK_CUBIERTA_ESPECIALIDAD" in mensaje_mayus:
-        return (
-            "❌ ESPECIALIDAD NO ENCONTRADA:\n"
-            "Explicación humana: La especialidad seleccionada no existe en la base de datos.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "FK_CUBIERTA_GUARDIA" in mensaje_mayus:
-        return (
-            "❌ GUARDIA NO ENCONTRADA:\n"
-            "Explicación humana: La guardia seleccionada no existe en la base de datos.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "FK_RECORRIDO_RONDA" in mensaje_mayus:
-        return (
-            "❌ RONDA NO ENCONTRADA (Foreign Key):\n"
-            "Explicación humana: La ronda seleccionada para el recorrido no existe en la base de datos.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "FK_RECORRIDO_MEDICO" in mensaje_mayus:
-        return (
-            "❌ MÉDICO DEL RECORRIDO NO ENCONTRADO (Foreign Key):\n"
-            "Explicación humana: La matrícula médica asignada al recorrido no existe en la base de datos.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "FK_COMENTARIO_INTERNACION" in mensaje_mayus:
-        return (
-            "❌ INTERNACIÓN NO ENCONTRADA (Foreign Key):\n"
-            "Explicación humana: La internación indicada para el comentario no existe en la base de datos.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
-    if "FK_COMENTARIO_RECORRIDO" in mensaje_mayus:
-        return (
-            "❌ RECORRIDO NO ENCONTRADO (Foreign Key):\n"
-            "Explicación humana: El recorrido médico indicado para el comentario no existe en la base de datos.\n"
-            f"[Detalle técnico: {mensaje_original}]"
-        )
+    elif "FK_INTERNACION_PACIENTE" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: PACIENTE NO ENCONTRADO"
+        explicacion = "El DNI ingresado no corresponde a ningún paciente registrado en la base de datos."
+    elif "FK_INTERNACION_MEDICO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO PRINCIPAL NO ENCONTRADO"
+        explicacion = "La matrícula médica ingresada no existe en la base de datos."
+    elif "FK_HABITACION_SECTOR" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: SECTOR NO ENCONTRADO"
+        explicacion = "El sector seleccionado no existe en la base de datos."
+    elif "FK_CAMA_HABITACION" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: HABITACIÓN NO ENCONTRADA"
+        explicacion = "El ID de habitación ingresado no existe en el hospital."
+    elif "FK_CUBIERTA_MEDICO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO NO ENCONTRADO"
+        explicacion = "La matrícula médica seleccionada no existe en la base de datos."
+    elif "FK_CUBIERTA_ESPECIALIDAD" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: ESPECIALIDAD NO ENCONTRADA"
+        explicacion = "La especialidad seleccionada no existe en la base de datos."
+    elif "FK_CUBIERTA_GUARDIA" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: GUARDIA NO ENCONTRADA"
+        explicacion = "La guardia seleccionada no existe en la base de datos."
+    elif "FK_RECORRIDO_RONDA" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: RONDA NO ENCONTRADA"
+        explicacion = "La ronda seleccionada para el recorrido no existe en la base de datos."
+    elif "FK_RECORRIDO_MEDICO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO DEL RECORRIDO NO ENCONTRADO"
+        explicacion = "La matrícula médica asignada al recorrido no existe en la base de datos."
+    elif "FK_COMENTARIO_INTERNACION" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: INTERNACIÓN NO ENCONTRADA"
+        explicacion = "La internación indicada para el comentario no existe en la base de datos."
+    elif "FK_COMENTARIO_RECORRIDO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: RECORRIDO NO ENCONTRADO"
+        explicacion = "El recorrido médico indicado para el comentario no existe en la base de datos."
 
     # --------------------------------------------------------------------------
-    # 6. ERRORES GENERALES
+    # 6. OTRAS REGLAS O TRIGGERS (RAISE_APPLICATION_ERROR GENÉRICO)
     # --------------------------------------------------------------------------
-    traducciones_generales = {
-        1: ("DATO DUPLICADO (Clave Única o Primaria)", "Ya existe un registro con ese identificador en la base de datos."),
-        2291: ("DATO RELACIONADO NO ENCONTRADO (Foreign Key)", "Estás intentando asociar un dato a otra tabla que no existe previamente."),
-        2292: ("NO SE PUEDE ELIMINAR (Registros dependientes)", "No puedes borrar este registro porque otras tablas dependen de él."),
-        2290: ("REGLA DE VALIDACIÓN NO CUMPLIDA (Violación de CHECK)", "Uno de los valores ingresados no cumple con las restricciones permitidas."),
-        1400: ("CAMPO OBLIGATORIO VACÍO (NOT NULL)", "Intentaste guardar dejando en blanco un campo que es requerido obligatoriamente."),
-        942: ("TABLA NO ENCONTRADA", "La tabla especificada no existe en Oracle. Haz clic en 'Crear/Reiniciar Tablas'."),
-        904: ("COLUMNA NO VÁLIDA", "Escribiste un nombre de columna que no existe en la tabla consultada."),
-        933: ("ERROR DE SINTAXIS SQL", "La consulta SQL está mal redactada o tiene palabras clave fuera de lugar."),
-        936: ("FALTA UNA EXPRESIÓN EN EL SQL", "Falta especificar un valor, una columna o una condición en tu sentencia SQL."),
-        1438: ("NÚMERO DEMASIADO GRANDE", "El número ingresado supera los dígitos permitidos para esa columna."),
-        1843: ("FORMATO DE FECHA INCORRECTO", "El formato de fecha no es válido. Usa el formato estándar DD/MM/YYYY o YYYY-MM-DD."),
-        1017: ("ACCESO DENEGADO", "El usuario o contraseña configurado en el archivo .env es incorrecto."),
-        12541: ("BASE DE DATOS INALCANZABLE (Listener caído)", "El servicio de Oracle no responde en el puerto 1521."),
-        54: ("RECURSO BLOQUEADO POR OTRA TRANSACCIÓN", "La fila seleccionada está siendo modificada por otra transacción activa en este momento.")
-    }
+    elif (codigo_oracle and 20000 <= abs(codigo_oracle) <= 20999) or "ORA-20" in mensaje_mayus or "REGLA DE NEGOCIO" in mensaje_mayus:
+        texto_limpio = mensaje_original
+        texto_limpio = re.sub(r'ORA-20\d{3}:\s*', '', texto_limpio, flags=re.IGNORECASE)
+        texto_limpio = texto_limpio.split("ORA-06512")[0].split("ORA-04088")[0].strip()
+        if texto_limpio.lower().startswith("regla de negocio:"):
+            texto_limpio = texto_limpio[len("regla de negocio:"):].strip()
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA"
+        explicacion = f"{texto_limpio}"
 
-    if codigo_oracle in traducciones_generales:
-        titulo, explicacion = traducciones_generales[codigo_oracle]
-        return (
-            f"⚠️ {titulo}:\n"
-            f"Explicación humana: {explicacion}\n"
-            f"[Detalle técnico Oracle: ORA-{codigo_oracle:05d}: {mensaje_original}]"
-        )
+    # --------------------------------------------------------------------------
+    # 7. ERRORES GENERALES
+    # --------------------------------------------------------------------------
     else:
-        return (
-            f"⚠️ ERROR DE BASE DE DATOS:\n"
-            f"Explicación: {mensaje_original}"
-        )
+        traducciones_generales = {
+            1: ("❌ REGLA DE NEGOCIO VIOLADA: DATO DUPLICADO", "Ya existe un registro con ese identificador en la base de datos."),
+            2291: ("❌ REGLA DE NEGOCIO VIOLADA: DATO RELACIONADO NO ENCONTRADO", "Estás intentando asociar un dato a otra tabla que no existe previamente."),
+            2292: ("❌ REGLA DE NEGOCIO VIOLADA: NO SE PUEDE ELIMINAR (REGISTROS DEPENDIENTES)", "No puedes borrar este registro porque otras tablas dependen de él."),
+            2290: ("❌ REGLA DE NEGOCIO VIOLADA: REGLA DE VALIDACIÓN NO CUMPLIDA", "Uno de los valores ingresados no cumple con las restricciones permitidas del sistema."),
+            1400: ("❌ REGLA DE NEGOCIO VIOLADA: CAMPO OBLIGATORIO VACÍO", "Intentaste guardar dejando en blanco un campo que es requerido obligatoriamente."),
+            942: ("⚠️ TABLA NO ENCONTRADA", "La tabla especificada no existe en Oracle. Haz clic en 'Crear/Reiniciar Tablas'."),
+            904: ("⚠️ COLUMNA NO VÁLIDA", "Escribiste un nombre de columna que no existe en la tabla consultada."),
+            933: ("⚠️ ERROR DE SINTAXIS SQL", "La consulta SQL está mal redactada o tiene palabras clave fuera de lugar."),
+            936: ("⚠️ FALTA UNA EXPRESIÓN EN EL SQL", "Falta especificar un valor, una columna o una condición en tu sentencia SQL."),
+            1438: ("⚠️ NÚMERO DEMASIADO GRANDE", "El número ingresado supera los dígitos permitidos para esa columna."),
+            1843: ("⚠️ FORMATO DE FECHA INCORRECTO", "El formato de fecha no es válido. Usa el formato estándar DD/MM/YYYY o YYYY-MM-DD."),
+            1017: ("⚠️ ACCESO DENEGADO", "El usuario o contraseña configurado en el archivo .env es incorrecto."),
+            12541: ("⚠️ BASE DE DATOS INALCANZABLE", "El servicio de Oracle no responde en el puerto 1521."),
+            54: ("⚠️ RECURSO BLOQUEADO POR OTRA TRANSACCIÓN", "La fila seleccionada está siendo modificada por otra transacción activa en este momento.")
+        }
+
+        if codigo_oracle in traducciones_generales:
+            titulo, explicacion = traducciones_generales[codigo_oracle]
+        else:
+            titulo = "⚠️ ERROR DE BASE DE DATOS"
+            explicacion = f"Explicación: {mensaje_original}"
+
+    salida = f"{titulo}:\n{explicacion}"
+    if incluir_tecnico:
+        salida += f"\n[Detalle técnico: {mensaje_original}]"
+    return salida
 
 # ==============================================================================
 # CONEXIÓN
@@ -492,6 +420,20 @@ def obtener_conexion(user=None, password=None):
 # APLICACIÓN PRINCIPAL
 # ==============================================================================
 class HospitalApp(tk.Tk):
+    def reportar_error(self, titulo_popup, error, prefijo_log=None, parent=None):
+        """
+        Registra el detalle técnico completo en la terminal inferior (pantalla de abajo)
+        y despliega en el popup únicamente el mensaje humano sin triggers ni códigos técnicos.
+        """
+        msg_humano = traducir_error_oracle(error, incluir_tecnico=False)
+        msg_tecnico = traducir_error_oracle(error, incluir_tecnico=True)
+        texto_log = f"{prefijo_log}:\n{msg_tecnico}" if prefijo_log else msg_tecnico
+        self.log_error(texto_log)
+        if parent:
+            messagebox.showerror(titulo_popup, msg_humano, parent=parent)
+        else:
+            messagebox.showerror(titulo_popup, msg_humano)
+
     def __init__(self):
         super().__init__()
         self.title("Sistema Hospitalario - Gestión de Internaciones y Consultas SQL (UNMDP)")
@@ -608,7 +550,7 @@ class HospitalApp(tk.Tk):
                             pass
                         else:
                             errores += 1
-                            self.log_error(f"Sentencia con aviso [{error_obj.code}]: {sql[:40]}... -> {traducir_error_oracle(e)}")
+                            self.log_error(f"Sentencia con aviso [{error_obj.code}]: {sql[:40]}... -> {traducir_error_oracle(e, incluir_tecnico=True)}")
 
                 # Mantener la ventana viva y respondiendo a Windows en tiempo real
                 if idx % 3 == 0 or idx == total:
@@ -627,7 +569,7 @@ class HospitalApp(tk.Tk):
             return True
 
         except Exception as e:
-            self.log_error(f"Error crítico al procesar '{archivo}':\n{traducir_error_oracle(e)}")
+            self.log_error(f"Error crítico al procesar '{archivo}':\n{traducir_error_oracle(e, incluir_tecnico=True)}")
             if mostrar_popup:
                 messagebox.showerror("Error", traducir_error_oracle(e))
             return False
@@ -982,7 +924,7 @@ class HospitalApp(tk.Tk):
         ttk.Label(frame_detalle, text=" Doble clic en una fila de la tabla carga la habitación y cama automáticamente.", font=("Segoe UI", 8, "italic"), foreground="#4A5568").pack(anchor="w", padx=4)
 
         btn_refrescar_camas = tk.Button(
-            frame_der, text="🔄 Actualizar Camas y Resumen (Invocar SP)", bg="#E2E8F0", cursor="hand2", command=self.cargar_camas_libres
+            frame_der, text="🔄 Actualizar Camas y Resumen", bg="#E2E8F0", cursor="hand2", command=self.cargar_camas_libres
         )
         btn_refrescar_camas.pack(anchor="w", pady=(0, 2))
 
@@ -1086,16 +1028,9 @@ class HospitalApp(tk.Tk):
             
             id_internacion = int(id_internacion_var.getvalue()[0])
 
-            # 3. Ocupar la cama si la internación está activa (respetando si la tabla usa 'OCUPADA' u 'Ocupada')
-            if fecha_fin_dt is None:
-                estado_ocupado = "OCUPADA" if fila_cama[0].isupper() else "Ocupada"
-                cursor.execute("""
-                    UPDATE CAMA 
-                    SET estado = :1 
-                    WHERE id_habitacion = :2 AND nro_cama = :3
-                """, [estado_ocupado, hab, cama])
-
-            # 4. Insertar en POSEE (historial con timestamp compatible con trg_posee_fecha)
+            # 3. Insertar en POSEE:
+            # En la base de datos, el Trigger 'trg_ocupar_cama_posee' valida automáticamente que la cama
+            # esté LIBRE y la pasa a 'OCUPADA' para internaciones activas.
             if fecha_fin_dt is not None:
                 cursor.execute("""
                     INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
@@ -1106,6 +1041,13 @@ class HospitalApp(tk.Tk):
                     INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
                     VALUES (:1, :2, :3, SYSTIMESTAMP)
                 """, [id_internacion, hab, cama])
+
+            # Fallback de compatibilidad: si la BD aún no tuviese compilado el trigger 'trg_ocupar_cama_posee'
+            if fecha_fin_dt is None:
+                cursor.execute("SELECT estado FROM CAMA WHERE id_habitacion = :1 AND nro_cama = :2", [hab, cama])
+                row_chk = cursor.fetchone()
+                if row_chk and row_chk[0].upper() == 'LIBRE':
+                    cursor.execute("UPDATE CAMA SET estado = 'OCUPADA' WHERE id_habitacion = :1 AND nro_cama = :2", [hab, cama])
 
             # Confirmar transacción completa
             conn.commit()
@@ -1133,8 +1075,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Transacción ABORTADA (ROLLBACK aplicado):\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error en Transacción", traducir_error_oracle(e))
+            self.reportar_error("Error en Transacción", e, prefijo_log="Transacción ABORTADA (ROLLBACK aplicado)")
 
         finally:
             if cursor:
@@ -1351,19 +1292,19 @@ class HospitalApp(tk.Tk):
             if fila_cama[0].upper() != 'LIBRE':
                 raise Exception(f"La cama {cama_nueva} de la habitación {hab_nueva} no está disponible (Estado actual: '{fila_cama[0]}').")
 
-            # 4. Ocupar la nueva cama (respetando si la tabla usa 'OCUPADA' u 'Ocupada')
-            estado_ocupado = "OCUPADA" if fila_cama[0].isupper() else "Ocupada"
-            cursor.execute("""
-                UPDATE CAMA
-                SET estado = :1
-                WHERE id_habitacion = :2 AND nro_cama = :3
-            """, [estado_ocupado, hab_nueva, cama_nueva])
-
-            # 5. Insertar en POSEE (el Trigger 'trg_liberar_cama_cambio' liberará automáticamente la cama anterior)
+            # 4. Insertar en POSEE:
+            # - El Trigger 'trg_ocupar_cama_posee' valida automáticamente que la nueva cama esté LIBRE y la pasa a 'OCUPADA'.
+            # - El Trigger 'trg_liberar_cama_cambio' pasa automáticamente la cama anterior a 'LIBRE'.
             cursor.execute("""
                 INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
                 VALUES (:1, :2, :3, SYSTIMESTAMP)
             """, [id_int, hab_nueva, cama_nueva])
+
+            # Fallback de compatibilidad: si la BD aún no tuviese compilado el trigger 'trg_ocupar_cama_posee'
+            cursor.execute("SELECT estado FROM CAMA WHERE id_habitacion = :1 AND nro_cama = :2", [hab_nueva, cama_nueva])
+            row_chk = cursor.fetchone()
+            if row_chk and row_chk[0].upper() == 'LIBRE':
+                cursor.execute("UPDATE CAMA SET estado = 'OCUPADA' WHERE id_habitacion = :1 AND nro_cama = :2", [hab_nueva, cama_nueva])
 
             # Confirmar transacción completa
             conn.commit()
@@ -1389,8 +1330,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Traslado ABORTADO (ROLLBACK aplicado):\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error en Traslado", traducir_error_oracle(e))
+            self.reportar_error("Error en Traslado", e, prefijo_log="Traslado ABORTADO (ROLLBACK aplicado)")
         finally:
             if cursor:
                 cursor.close()
@@ -1502,8 +1442,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Alta médica ABORTADA (ROLLBACK aplicado):\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error en Alta Médica", traducir_error_oracle(e))
+            self.reportar_error("Error en Alta Médica", e, prefijo_log="Alta médica ABORTADA (ROLLBACK aplicado)")
         finally:
             if cursor:
                 cursor.close()
@@ -1578,7 +1517,7 @@ class HospitalApp(tk.Tk):
             cursor.close()
         except Exception as e:
             traduccion = traducir_error_oracle(e)
-            self.log_error(f"No se pudieron cargar las camas libres:\n{traduccion}")
+            self.log_error(f"No se pudieron cargar las camas libres:\n{traducir_error_oracle(e, incluir_tecnico=True)}")
             if "942" in str(e) or "no existe" in str(e).lower():
                 self.log_info("💡 TIP: Parece que las tablas aún no fueron creadas en Oracle. Usa el botón 'Crear/Reiniciar Tablas' arriba a la derecha.")
         finally:
@@ -1635,8 +1574,7 @@ class HospitalApp(tk.Tk):
             messagebox.showinfo(f"Comentarios de Internación #{id_int}", texto_resultado)
 
         except Exception as e:
-            self.log_error(f"Error al ejecutar Stored Procedure de comentarios:\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error Stored Procedure", traducir_error_oracle(e))
+            self.reportar_error("Error Stored Procedure", e, prefijo_log="Error al ejecutar Stored Procedure de comentarios")
         finally:
             if conn:
                 conn.close()
@@ -1801,8 +1739,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al registrar paciente:\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error", traducir_error_oracle(e))
+            self.reportar_error("Error", e, prefijo_log="Error al registrar paciente")
         finally:
             if cursor:
                 cursor.close()
@@ -1826,7 +1763,7 @@ class HospitalApp(tk.Tk):
                 self.tabla_pacientes.insert("", tk.END, values=row)
             cursor.close()
         except Exception as e:
-            self.log_error(f"No se pudieron cargar los pacientes: {traducir_error_oracle(e)}")
+            self.log_error(f"No se pudieron cargar los pacientes: {traducir_error_oracle(e, incluir_tecnico=True)}")
         finally:
             if conn:
                 conn.close()
@@ -1950,8 +1887,7 @@ class HospitalApp(tk.Tk):
             self.log_info(f"Visualizando foto del médico Dr. {nombre_completo} (recuperada del BLOB de Oracle).")
 
         except Exception as e:
-            self.log_error(f"Error al abrir la foto del médico: {traducir_error_oracle(e)}")
-            messagebox.showerror("Error", traducir_error_oracle(e))
+            self.reportar_error("Error", e, prefijo_log="Error al abrir la foto del médico")
         finally:
             if conn:
                 conn.close()
@@ -2016,8 +1952,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al registrar médico:\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error", traducir_error_oracle(e))
+            self.reportar_error("Error", e, prefijo_log="Error al registrar médico")
         finally:
             if cursor:
                 cursor.close()
@@ -2042,7 +1977,7 @@ class HospitalApp(tk.Tk):
                 self.tabla_medicos.insert("", tk.END, values=row)
             cursor.close()
         except Exception as e:
-            self.log_error(f"No se pudieron cargar los médicos: {traducir_error_oracle(e)}")
+            self.log_error(f"No se pudieron cargar los médicos: {traducir_error_oracle(e, incluir_tecnico=True)}")
         finally:
             if conn:
                 conn.close()
@@ -2130,8 +2065,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al crear sector:\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error al Crear Sector", traducir_error_oracle(e))
+            self.reportar_error("Error al Crear Sector", e, prefijo_log="Error al crear sector")
             return False
         finally:
             if cursor:
@@ -2170,7 +2104,7 @@ class HospitalApp(tk.Tk):
 
             cursor.close()
         except Exception as e:
-            self.log_error(f"Error al actualizar sectores: {traducir_error_oracle(e)}")
+            self.log_error(f"Error al actualizar sectores: {traducir_error_oracle(e, incluir_tecnico=True)}")
         finally:
             if conn:
                 conn.close()
@@ -2293,8 +2227,7 @@ class HospitalApp(tk.Tk):
 
             messagebox.showinfo(f"Rondas de Habitación #{id_hab}", detalle)
         except Exception as e:
-            self.log_error(f"Error al consultar rondas: {traducir_error_oracle(e)}")
-            messagebox.showerror("Error", traducir_error_oracle(e))
+            self.reportar_error("Error", e, prefijo_log="Error al consultar rondas")
         finally:
             if conn:
                 conn.close()
@@ -2364,8 +2297,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al crear habitación y rondas:\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error en Creación", traducir_error_oracle(e))
+            self.reportar_error("Error en Creación", e, prefijo_log="Error al crear habitación y rondas")
         finally:
             if cursor:
                 cursor.close()
@@ -2394,7 +2326,7 @@ class HospitalApp(tk.Tk):
                 self.tabla_habitaciones.insert("", tk.END, values=(row[0], row[1], row[2], row[3], cant_texto))
             cursor.close()
         except Exception as e:
-            self.log_error(f"No se pudieron cargar habitaciones: {traducir_error_oracle(e)}")
+            self.log_error(f"No se pudieron cargar habitaciones: {traducir_error_oracle(e, incluir_tecnico=True)}")
         finally:
             if conn:
                 conn.close()
@@ -2474,8 +2406,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al crear cama:\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error", traducir_error_oracle(e))
+            self.reportar_error("Error", e, prefijo_log="Error al crear cama")
         finally:
             if cursor:
                 cursor.close()
@@ -2500,7 +2431,7 @@ class HospitalApp(tk.Tk):
                 self.tabla_todas_camas.insert("", tk.END, values=row)
             cursor.close()
         except Exception as e:
-            self.log_error(f"No se pudieron cargar las camas: {traducir_error_oracle(e)}")
+            self.log_error(f"No se pudieron cargar las camas: {traducir_error_oracle(e, incluir_tecnico=True)}")
         finally:
             if conn:
                 conn.close()
@@ -2900,7 +2831,7 @@ class HospitalApp(tk.Tk):
             self._actualizar_label_esp_guardia(cb_esp, lbl_info)
 
         except Exception as e:
-            self.log_error(f"No se pudieron cargar las especialidades del médico: {traducir_error_oracle(e)}")
+            self.log_error(f"No se pudieron cargar las especialidades del médico: {traducir_error_oracle(e, incluir_tecnico=True)}")
         finally:
             if conn_propia:
                 if cursor_local:
@@ -2952,7 +2883,7 @@ class HospitalApp(tk.Tk):
                 self.cb_guardia_medico, self.cb_guardia_especialidad, self.lbl_guardia_esp_info, cursor=cursor
             )
         except Exception as e:
-            self.log_error(f"No se pudieron cargar los médicos para guardias: {traducir_error_oracle(e)}")
+            self.log_error(f"No se pudieron cargar los médicos para guardias: {traducir_error_oracle(e, incluir_tecnico=True)}")
         finally:
             if cursor:
                 cursor.close()
@@ -2993,6 +2924,7 @@ class HospitalApp(tk.Tk):
         fmt = 'YYYY-MM-DD' if '-' in fecha_str else 'DD/MM/YYYY'
 
         cursor = None
+        nuevo_id = None
         try:
             cursor = conn.cursor()
             id_guardia_var = cursor.var(oracledb.NUMBER)
@@ -3004,12 +2936,31 @@ class HospitalApp(tk.Tk):
             """, [turno, fecha_str, id_guardia_var])
             nuevo_id = int(id_guardia_var.getvalue()[0])
 
-            cursor.execute("""
-                INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia)
-                VALUES (:1, :2, :3)
-            """, [matricula, id_especialidad, nuevo_id])
-
+            # Confirmar la cabecera de la guardia en la BD para que los disparadores
+            # (incluso si tienen PRAGMA AUTONOMOUS_TRANSACTION) puedan leerla sin fallar con ORA-01403.
             conn.commit()
+
+            try:
+                cursor.execute("""
+                    INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia)
+                    VALUES (:1, :2, :3)
+                """, [matricula, id_especialidad, nuevo_id])
+                conn.commit()
+            except Exception as e_cp:
+                # Si la asignación falla (por ejemplo por regla de guardia superpuesta, límite mensual o médico no dispuesto),
+                # eliminamos la guardia recién creada para evitar dejar una guardia huérfana sin médicos asignados.
+                try:
+                    conn_clean = self.obtener_conexion_guardias()
+                    if conn_clean:
+                        cur_clean = conn_clean.cursor()
+                        cur_clean.execute("DELETE FROM GUARDIA WHERE id_guardia = :1", [nuevo_id])
+                        conn_clean.commit()
+                        cur_clean.close()
+                        conn_clean.close()
+                except Exception:
+                    pass
+                raise e_cp
+
             msg = f"Guardia #{nuevo_id} ({turno} del {fecha_str}) creada y asignada a '{med_sel}' por usuario '{self.usuario_guardias.upper()}'."
             self.log_exito(msg)
             messagebox.showinfo("Éxito", msg)
@@ -3017,9 +2968,11 @@ class HospitalApp(tk.Tk):
 
         except Exception as e:
             if conn:
-                conn.rollback()
-            self.log_error(f"Error al crear y asignar guardia (ROLLBACK aplicado):\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error", traducir_error_oracle(e))
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            self.reportar_error("Error", e, prefijo_log="Error al crear y asignar guardia (ROLLBACK aplicado)")
         finally:
             if cursor:
                 cursor.close()
@@ -3057,7 +3010,7 @@ class HospitalApp(tk.Tk):
                 self.tabla_guardias.insert("", tk.END, values=row)
             cursor.close()
         except Exception as e:
-            self.log_error(f"No se pudieron cargar las guardias: {traducir_error_oracle(e)}")
+            self.log_error(f"No se pudieron cargar las guardias: {traducir_error_oracle(e, incluir_tecnico=True)}")
         finally:
             if conn:
                 conn.close()
@@ -3113,8 +3066,7 @@ class HospitalApp(tk.Tk):
             asignaciones_actuales = cursor.fetchall()
             opciones_medicos = self._obtener_opciones_medicos(cursor)
         except Exception as e:
-            self.log_error(f"Error al cargar guardia #{id_guardia}: {traducir_error_oracle(e)}")
-            messagebox.showerror("Error", traducir_error_oracle(e))
+            self.reportar_error("Error", e, prefijo_log=f"Error al cargar guardia #{id_guardia}")
             return
         finally:
             if cursor:
@@ -3330,8 +3282,7 @@ class HospitalApp(tk.Tk):
             except Exception as e:
                 if conn_save:
                     conn_save.rollback()
-                self.log_error(f"Error al modificar guardia #{id_guardia} (ROLLBACK aplicado):\n{traducir_error_oracle(e)}")
-                messagebox.showerror("Error al Modificar Guardia", traducir_error_oracle(e), parent=modal)
+                self.reportar_error("Error al Modificar Guardia", e, prefijo_log=f"Error al modificar guardia #{id_guardia} (ROLLBACK aplicado)", parent=modal)
             finally:
                 if cur_save:
                     cur_save.close()
@@ -3410,8 +3361,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al eliminar guardia #{id_guardia}:\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error al Eliminar Guardia", traducir_error_oracle(e))
+            self.reportar_error("Error al Eliminar Guardia", e, prefijo_log=f"Error al eliminar guardia #{id_guardia}")
         finally:
             if cursor:
                 cursor.close()
@@ -3596,8 +3546,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al registrar recorrido:\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error al Registrar Recorrido", traducir_error_oracle(e))
+            self.reportar_error("Error al Registrar Recorrido", e, prefijo_log="Error al registrar recorrido")
         finally:
             if cursor:
                 cursor.close()
@@ -3699,8 +3648,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al eliminar recorrido #{id_rec}:\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error al Eliminar Recorrido", traducir_error_oracle(e))
+            self.reportar_error("Error al Eliminar Recorrido", e, prefijo_log=f"Error al eliminar recorrido #{id_rec}")
         finally:
             if cursor:
                 cursor.close()
@@ -4214,8 +4162,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al registrar comentario médico:\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error al Guardar Comentario", traducir_error_oracle(e))
+            self.reportar_error("Error al Guardar Comentario", e, prefijo_log="Error al registrar comentario médico")
         finally:
             if cursor:
                 cursor.close()
@@ -4281,8 +4228,7 @@ class HospitalApp(tk.Tk):
         except Exception as e:
             if conn:
                 conn.rollback()
-            self.log_error(f"Error al eliminar comentario #{id_com}:\n{traducir_error_oracle(e)}")
-            messagebox.showerror("Error al Eliminar", traducir_error_oracle(e))
+            self.reportar_error("Error al Eliminar", e, prefijo_log=f"Error al eliminar comentario #{id_com}")
         finally:
             if cursor:
                 cursor.close()
@@ -4381,7 +4327,8 @@ class HospitalApp(tk.Tk):
             ("Guardias", "SELECT g.id_guardia, g.fecha, g.turno, cp.numero_de_matricula FROM GUARDIA g LEFT JOIN CUBIERTA_POR cp ON g.id_guardia = cp.id_guardia ORDER BY g.fecha DESC;"),
             ("Comentarios Recorridos", "SELECT * FROM COMENTARIO;"),
             ("Internaciones", "SELECT * FROM INTERNACION ORDER BY id_internacion DESC;"),
-            ("Historial POSEE", "SELECT * FROM POSEE ORDER BY fechaHora DESC;")
+            ("Historial POSEE", "SELECT * FROM POSEE ORDER BY fechaHora DESC;"),
+            ("Vacaciones", "SELECT v.numero_de_matricula, p.nombre || ' ' || p.apellido AS medico, TO_CHAR(v.fecha_inicio_vac, 'DD/MM/YYYY') AS inicio, TO_CHAR(v.fecha_fin_vac, 'DD/MM/YYYY') AS fin FROM VACACION v JOIN MEDICO m ON v.numero_de_matricula = m.numero_de_matricula JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI ORDER BY v.fecha_inicio_vac DESC;")
         ]
 
         for texto, sql in consultas_rapidas:
@@ -4475,9 +4422,12 @@ class HospitalApp(tk.Tk):
                 self.log_exito(f"Sentencia ejecutada: '{sql[:45]}...' (Filas afectadas: {afectadas})")
 
         except Exception as e:
-            traduccion = traducir_error_oracle(e)
-            self.log_error(f"Error al ejecutar SQL:\n{traduccion}")
-            messagebox.showerror("Error al Ejecutar Consulta", traduccion)
+            if conn:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            self.reportar_error("Error al Ejecutar Consulta", e, prefijo_log="Error al ejecutar SQL")
 
         finally:
             if cursor:
@@ -4520,7 +4470,10 @@ class HospitalApp(tk.Tk):
         self._agregar_log(f"✅ {mensaje}", "EXITO")
 
     def log_error(self, mensaje):
-        self._agregar_log(f"❌ {mensaje}", "ERROR")
+        msg_str = str(mensaje).strip()
+        if not msg_str.startswith("❌") and not msg_str.startswith("⚠️"):
+            msg_str = f"❌ {msg_str}"
+        self._agregar_log(msg_str, "ERROR")
 
 # ==============================================================================
 # PUNTO DE ENTRADA

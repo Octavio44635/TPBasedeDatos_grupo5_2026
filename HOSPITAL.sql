@@ -457,7 +457,7 @@ insert into cama (
 ) values
    ( 1,
      1,
-     'OCUPADA' );
+     'LIBRE' ); -- El trigger trg_ocupar_cama_posee la pondrá automáticamente en 'OCUPADA' al insertar en POSEE
 insert into cama (
    id_habitacion,
    nro_cama,
@@ -548,7 +548,8 @@ insert into especialidad ( nombre ) values
    ( 'Cardiología' );
 insert into especialidad ( nombre ) values
    ( 'Cirugía General' );
-
+insert into especialidad ( nombre ) values
+   ( 'Pediatría' );
 insert into tiene (
    numero_de_matricula,
    id_especialidad,
@@ -574,31 +575,19 @@ insert into tiene (
      2,
      'No' );
 
-insert into guardia (
-   turno,
-   fecha
-) values
-   ( 'NOCHE',
-     sysdate + 5);
-
-commit;
-insert into cubierta_por (
+insert into tiene (
    numero_de_matricula,
    id_especialidad,
-   id_guardia
+   dispuesto
 ) values
    ( 'M101',
-     1,
-     1 );
+     3,
+     'Si' );
+          
 
-insert into cubierta_por (
-   numero_de_matricula,
-   id_especialidad,
-   id_guardia
-) values
-   ( 'M100',
-     2,
-     1 );
+
+commit;
+
 
 insert into vacacion (
    numero_de_matricula,
@@ -610,5 +599,10 @@ insert into vacacion (
      1,
      to_date('2026-12-15','YYYY-MM-DD'),
      to_date('2026-12-30','YYYY-MM-DD') );
+
+-- Caso de prueba del TRIGGER trg_medico_en_vacaciones (descomentar para probar que rechaza asignar guardia en vacaciones, debe arrojar error ORA-20021):
+-- INSERT INTO GUARDIA (id_guardia, turno, fecha) VALUES (999, 'NOCHE', TO_DATE('2026-12-20', 'YYYY-MM-DD'));
+-- INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia) VALUES ('M101', 1, 999);
+
 commit;
 

@@ -260,6 +260,54 @@ BEGIN
     COMMIT;
 END;
 /
+
+-- Regla de negocio: Validar que un médico NO esté de vacaciones al asignarle una guardia
+CREATE OR REPLACE TRIGGER trg_medico_en_vacaciones
+BEFORE INSERT OR UPDATE ON CUBIERTA_POR
+FOR EACH ROW
+DECLARE
+    v_fecha_guardia DATE;
+    v_ini_vac VARCHAR2(10);
+    v_fin_vac VARCHAR2(10);
+    v_en_vacaciones NUMBER;
+BEGIN
+    -- 1. Obtener la fecha de la guardia
+    BEGIN
+        SELECT fecha INTO v_fecha_guardia
+        FROM GUARDIA
+        WHERE id_guardia = :NEW.id_guardia;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RETURN;
+    END;
+
+    -- 2. Verificar si la fecha de la guardia cae dentro del período de vacaciones del médico
+    SELECT COUNT(*) INTO v_en_vacaciones
+    FROM VACACION
+    WHERE numero_de_matricula = :NEW.numero_de_matricula
+      AND TRUNC(v_fecha_guardia) >= TRUNC(fecha_inicio_vac)
+      AND (fecha_fin_vac IS NULL OR TRUNC(v_fecha_guardia) <= TRUNC(fecha_fin_vac));
+
+    IF v_en_vacaciones > 0 THEN
+        BEGIN
+            SELECT TO_CHAR(fecha_inicio_vac, 'DD/MM/YYYY'), TO_CHAR(fecha_fin_vac, 'DD/MM/YYYY')
+            INTO v_ini_vac, v_fin_vac
+            FROM VACACION
+            WHERE numero_de_matricula = :NEW.numero_de_matricula
+              AND TRUNC(v_fecha_guardia) >= TRUNC(fecha_inicio_vac)
+              AND (fecha_fin_vac IS NULL OR TRUNC(v_fecha_guardia) <= TRUNC(fecha_fin_vac))
+            FETCH FIRST 1 ROW ONLY;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                v_ini_vac := 'N/D';
+                v_fin_vac := 'N/D';
+        END;
+
+        RAISE_APPLICATION_ERROR(-20021, 'Regla de negocio: El médico ' || :NEW.numero_de_matricula || ' se encuentra de vacaciones en la fecha de la guardia (' || TO_CHAR(v_fecha_guardia, 'DD/MM/YYYY') || '). Período de vacaciones: del ' || v_ini_vac || ' al ' || NVL(v_fin_vac, 'indefinido') || '.');
+    END IF;
+END;
+/
+
 CREATE OR REPLACE TRIGGER trg_liberar_cama_fin_int
 AFTER UPDATE OF fecha_fin ON INTERNACION
 FOR EACH ROW
@@ -286,6 +334,51 @@ BEGIN
     END;
 END;
 /
+
+-- Regla de negocio: Al asignar una cama a un paciente en POSEE (internación o traslado),
+-- validar que la cama esté LIBRE y actualizarla automáticamente a 'OCUPADA'.
+CREATE OR REPLACE TRIGGER trg_ocupar_cama_posee
+BEFORE INSERT ON POSEE
+FOR EACH ROW
+DECLARE
+    v_estado VARCHAR2(8);
+    v_fecha_fin DATE;
+BEGIN
+    -- 1. Verificar si la internación está activa (fecha_fin IS NULL)
+    SELECT fecha_fin INTO v_fecha_fin
+    FROM INTERNACION
+    WHERE id_internacion = :NEW.id_internacion;
+
+    -- Si la internación ya finalizó previamente (carga histórica), no ocupamos la cama
+    IF v_fecha_fin IS NOT NULL THEN
+        RETURN;
+    END IF;
+
+    -- 2. Consultar y bloquear la cama destino con FOR UPDATE
+    BEGIN
+        SELECT estado INTO v_estado
+        FROM CAMA
+        WHERE id_habitacion = :NEW.id_habitacion
+          AND nro_cama = :NEW.nro_cama
+        FOR UPDATE;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20017, 'Regla de negocio: La cama (Habitación ' || :NEW.id_habitacion || ', Cama ' || :NEW.nro_cama || ') no existe en la base de datos.');
+    END;
+
+    -- 3. Validar que la cama esté LIBRE
+    IF UPPER(v_estado) != 'LIBRE' THEN
+        RAISE_APPLICATION_ERROR(-20019, 'Regla de negocio: La cama (Habitación ' || :NEW.id_habitacion || ', Cama ' || :NEW.nro_cama || ') no está disponible (Estado actual: ' || v_estado || ').');
+    END IF;
+
+    -- 4. Pasar automáticamente la cama a OCUPADA
+    UPDATE CAMA
+    SET estado = 'OCUPADA'
+    WHERE id_habitacion = :NEW.id_habitacion
+      AND nro_cama = :NEW.nro_cama;
+END;
+/
+
 CREATE OR REPLACE TRIGGER trg_liberar_cama_cambio
 AFTER INSERT ON POSEE
 FOR EACH ROW
@@ -416,56 +509,126 @@ END;
 /
 
 -- Regla de negocio: No se puede asignar una guardia a un médico con la misma fecha y turno
+-- Se utiliza COMPOUND TRIGGER para:
+-- 1. Evitar error ORA-04091 (mutating table) sin necesidad de PRAGMA AUTONOMOUS_TRANSACTION.
+-- 2. Permitir que el trigger vea las filas de GUARDIA insertadas en la misma transacción (evita ORA-01403).
+-- 3. Comparar fechas con TRUNC para ignorar horas/minutos accidentales.
 CREATE OR REPLACE TRIGGER trg_evitar_guardia_superpuesta
-BEFORE INSERT OR UPDATE ON CUBIERTA_POR
-FOR EACH ROW
-DECLARE
-    PRAGMA AUTONOMOUS_TRANSACTION;
-    v_fecha DATE;
-    v_turno VARCHAR2(15);
-    v_cant NUMBER;
-BEGIN
-    SELECT fecha, UPPER(turno) INTO v_fecha, v_turno
-    FROM GUARDIA
-    WHERE id_guardia = :NEW.id_guardia;
+FOR INSERT OR UPDATE ON CUBIERTA_POR
+COMPOUND TRIGGER
 
-    SELECT COUNT(*) INTO v_cant
-    FROM CUBIERTA_POR cp
-    JOIN GUARDIA g ON cp.id_guardia = g.id_guardia
-    WHERE cp.numero_de_matricula = :NEW.numero_de_matricula
-      AND g.fecha = v_fecha
-      AND UPPER(g.turno) = v_turno
-      AND cp.id_guardia != :NEW.id_guardia;
+    TYPE t_cubierta IS RECORD (
+        matricula  VARCHAR2(10),
+        id_guardia NUMBER
+    );
+    TYPE t_cubierta_list IS TABLE OF t_cubierta INDEX BY PLS_INTEGER;
+    g_lista t_cubierta_list;
 
-    IF v_cant > 0 THEN
-        RAISE_APPLICATION_ERROR(-20015, 'Regla de negocio: El médico ya tiene asignada una guardia en la misma fecha y turno.');
-    END IF;
-    COMMIT;
-END;
+    BEFORE STATEMENT IS
+    BEGIN
+        g_lista.DELETE;
+    END BEFORE STATEMENT;
+
+    AFTER EACH ROW IS
+    BEGIN
+        g_lista(g_lista.COUNT + 1).matricula := :NEW.numero_de_matricula;
+        g_lista(g_lista.COUNT).id_guardia := :NEW.id_guardia;
+    END AFTER EACH ROW;
+
+    AFTER STATEMENT IS
+        v_cant NUMBER;
+        v_fecha DATE;
+        v_turno VARCHAR2(15);
+    BEGIN
+        FOR i IN 1 .. g_lista.COUNT LOOP
+            -- 1. Obtener la fecha y turno de la guardia que se está asignando
+            BEGIN
+                SELECT fecha, UPPER(turno) INTO v_fecha, v_turno
+                FROM GUARDIA
+                WHERE id_guardia = g_lista(i).id_guardia;
+            EXCEPTION
+                WHEN NO_DATA_FOUND THEN
+                    v_fecha := NULL;
+                    v_turno := NULL;
+            END;
+
+            IF v_fecha IS NOT NULL THEN
+                -- 2. Verificar si el médico ya tiene asignada otra guardia en la misma fecha y turno
+                SELECT COUNT(*) INTO v_cant
+                FROM CUBIERTA_POR cp
+                JOIN GUARDIA g ON cp.id_guardia = g.id_guardia
+                WHERE cp.numero_de_matricula = g_lista(i).matricula
+                  AND TRUNC(g.fecha) = TRUNC(v_fecha)
+                  AND UPPER(g.turno) = v_turno
+                  AND cp.id_guardia != g_lista(i).id_guardia;
+
+                IF v_cant > 0 THEN
+                    RAISE_APPLICATION_ERROR(-20015, 'Regla de negocio: El médico ya tiene asignada una guardia en la misma fecha y turno.');
+                END IF;
+            END IF;
+        END LOOP;
+    END AFTER STATEMENT;
+END trg_evitar_guardia_superpuesta;
 /
 
 -- Regla de negocio: Validar que al cambiar fecha/turno de una guardia, ningún médico asignado tenga conflicto
 CREATE OR REPLACE TRIGGER trg_validar_cambio_guardia
-BEFORE UPDATE OF fecha, turno ON GUARDIA
-FOR EACH ROW
-DECLARE
-    PRAGMA AUTONOMOUS_TRANSACTION;
-    v_cant NUMBER;
-BEGIN
-    SELECT COUNT(*) INTO v_cant
-    FROM CUBIERTA_POR cp_actual
-    JOIN CUBIERTA_POR cp_otra ON cp_actual.numero_de_matricula = cp_otra.numero_de_matricula
-    JOIN GUARDIA g_otra ON cp_otra.id_guardia = g_otra.id_guardia
-    WHERE cp_actual.id_guardia = :NEW.id_guardia
-      AND g_otra.fecha = :NEW.fecha
-      AND UPPER(g_otra.turno) = UPPER(:NEW.turno)
-      AND g_otra.id_guardia != :NEW.id_guardia;
+FOR UPDATE OF fecha, turno ON GUARDIA
+COMPOUND TRIGGER
 
-    IF v_cant > 0 THEN
-        RAISE_APPLICATION_ERROR(-20015, 'Regla de negocio: Uno de los médicos asignados a esta guardia ya tiene otra guardia en la nueva fecha y turno.');
-    END IF;
-    COMMIT;
-END;
+    TYPE t_guardia IS RECORD (
+        id_guardia NUMBER,
+        fecha      DATE,
+        turno      VARCHAR2(15)
+    );
+    TYPE t_guardia_list IS TABLE OF t_guardia INDEX BY PLS_INTEGER;
+    g_filas t_guardia_list;
+
+    BEFORE STATEMENT IS
+    BEGIN
+        g_filas.DELETE;
+    END BEFORE STATEMENT;
+
+    AFTER EACH ROW IS
+    BEGIN
+        g_filas(g_filas.COUNT + 1).id_guardia := :NEW.id_guardia;
+        g_filas(g_filas.COUNT).fecha := :NEW.fecha;
+        g_filas(g_filas.COUNT).turno := :NEW.turno;
+    END AFTER EACH ROW;
+
+    AFTER STATEMENT IS
+        v_cant NUMBER;
+        v_vac_cant NUMBER;
+    BEGIN
+        FOR i IN 1 .. g_filas.COUNT LOOP
+            -- 1. Validar que ningún médico asignado tenga otra guardia en la nueva fecha y turno
+            SELECT COUNT(*) INTO v_cant
+            FROM CUBIERTA_POR cp_actual
+            JOIN CUBIERTA_POR cp_otra ON cp_actual.numero_de_matricula = cp_otra.numero_de_matricula
+            JOIN GUARDIA g_otra ON cp_otra.id_guardia = g_otra.id_guardia
+            WHERE cp_actual.id_guardia = g_filas(i).id_guardia
+              AND TRUNC(g_otra.fecha) = TRUNC(g_filas(i).fecha)
+              AND UPPER(g_otra.turno) = UPPER(g_filas(i).turno)
+              AND g_otra.id_guardia != g_filas(i).id_guardia;
+
+            IF v_cant > 0 THEN
+                RAISE_APPLICATION_ERROR(-20015, 'Regla de negocio: Uno de los médicos asignados a esta guardia ya tiene otra guardia en la nueva fecha y turno.');
+            END IF;
+
+            -- 2. Validar que ningún médico asignado esté de vacaciones en la nueva fecha
+            SELECT COUNT(*) INTO v_vac_cant
+            FROM CUBIERTA_POR cp
+            JOIN VACACION v ON cp.numero_de_matricula = v.numero_de_matricula
+            WHERE cp.id_guardia = g_filas(i).id_guardia
+              AND TRUNC(g_filas(i).fecha) >= TRUNC(v.fecha_inicio_vac)
+              AND (v.fecha_fin_vac IS NULL OR TRUNC(g_filas(i).fecha) <= TRUNC(v.fecha_fin_vac));
+
+            IF v_vac_cant > 0 THEN
+                RAISE_APPLICATION_ERROR(-20021, 'Regla de negocio: Uno de los médicos asignados a esta guardia se encuentra de vacaciones en la nueva fecha programada.');
+            END IF;
+        END LOOP;
+    END AFTER STATEMENT;
+END trg_validar_cambio_guardia;
 /
 
 
