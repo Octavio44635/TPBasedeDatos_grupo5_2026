@@ -139,11 +139,28 @@ def traducir_error_oracle(error, incluir_tecnico=False, contexto=None):
             "El médico asignado tiene el mismo número de DNI que el paciente internado.\n"
             "Por regla de ética y control médico del hospital, un médico no puede ser el profesional a cargo de su propia internación."
         )
-    elif "20010" in mensaje_mayus or "INTERNACION_MULTIPLE" in mensaje_mayus or "INTERNACION ACTIVA" in mensaje_mayus or "INTERNACIÓN ACTIVA" in mensaje_mayus:
+    elif "20010" in mensaje_mayus or "UQ_PACIENTE_INT_ACTIVA" in mensaje_mayus or "INTERNACION_MULTIPLE" in mensaje_mayus or "INTERNACION ACTIVA" in mensaje_mayus or "INTERNACIÓN ACTIVA" in mensaje_mayus:
         titulo = "❌ REGLA DE NEGOCIO VIOLADA: PACIENTE CON INTERNACIÓN ACTIVA"
         explicacion = (
             "El paciente ya cuenta con una internación en curso sin fecha de alta médica.\n"
             "Por regla del hospital, no se puede registrar una nueva internación para un paciente que ya se encuentra actualmente internado."
+        )
+    elif "20054" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: INTERNACIÓN SUPERPUESTA CON OTRA DEL PACIENTE"
+        explicacion = (
+            "Las fechas ingresadas para la internación se superponen con otra internación ya registrada para ese paciente.\n"
+            "Verificá que la fecha de inicio y de fin no invadan el período de otra internación existente."
+        )
+    elif "20055" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: DÍA DEL RECORRIDO NO COINCIDE CON LA RONDA"
+        explicacion = (
+            "La fecha ingresada para el recorrido corresponde a un día de la semana distinto al configurado en la ronda seleccionada.\n"
+            "Seleccioná una fecha que coincida con el día de la ronda o elegí una ronda correspondiente a ese día."
+        )
+    elif "20056" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: RONDA CON RECORRIDOS EN OTRO DÍA"
+        explicacion = (
+            "No se puede cambiar el día de la semana de la ronda porque ya existen recorridos registrados en otra fecha/día para esa ronda."
         )
     elif "20011" in mensaje_mayus or "FECHA_INICIO" in mensaje_mayus or "VALIDAR_FECHA_INICIO" in mensaje_mayus:
         titulo = "❌ REGLA DE NEGOCIO VIOLADA: FECHA DE INICIO EN EL FUTURO"
@@ -197,17 +214,23 @@ def traducir_error_oracle(error, incluir_tecnico=False, contexto=None):
     elif "20020" in mensaje_mayus or "MISMA CAMA" in mensaje_mayus:
         titulo = "❌ REGLA DE NEGOCIO VIOLADA: PACIENTE YA ASIGNADO A ESTA CAMA"
         explicacion = "El paciente ya se encuentra actualmente en esa misma habitación y cama. Selecciona una cama diferente para el traslado."
-    elif "20048" in mensaje_mayus or ("VACACION" in mensaje_mayus and ("INTERNACION" in mensaje_mayus or "INTERNACIÓN" in mensaje_mayus)):
-        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO EN PERÍODO DE VACACIONES"
-        explicacion = (
-            "El médico seleccionado se encuentra en su período de vacaciones durante las fechas de la internación.\n"
-            "Por normativa hospitalaria y descanso laboral, un profesional de la salud no puede tener a su cargo una internación si se encuentra de vacaciones."
-        )
     elif "20049" in mensaje_mayus:
-        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO CON INTERNACIONES A CARGO"
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO CON GUARDIAS ASIGNADAS"
         explicacion = (
-            "No se pueden registrar vacaciones para el médico porque tiene una o más internaciones activas a su cargo durante ese período.\n"
-            "Debe reasignar o dar de alta las internaciones antes de iniciar su período de vacaciones."
+            "No se pueden registrar vacaciones para el médico porque tiene una o más guardias asignadas durante ese período.\n"
+            "Debe reasignar o eliminar las guardias antes de iniciar su período de vacaciones."
+        )
+    elif "20052" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO DE VACACIONES EN FECHA DEL RECORRIDO"
+        explicacion = (
+            "El médico seleccionado se encuentra de vacaciones en la fecha del recorrido.\n"
+            "No se puede asignar un recorrido médico durante su período de vacaciones."
+        )
+    elif "20053" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO CON RECORRIDOS ASIGNADOS"
+        explicacion = (
+            "No se pueden registrar vacaciones para el médico porque tiene uno o más recorridos asignados durante ese período.\n"
+            "Debe reasignar o eliminar los recorridos antes de registrar su período de vacaciones."
         )
     elif "20021" in mensaje_mayus or "VACACIONES" in mensaje_mayus or "PERÍODO DE VACACIONES" in mensaje_mayus or "PERIODO DE VACACIONES" in mensaje_mayus:
         titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO DE VACACIONES"
@@ -250,11 +273,6 @@ def traducir_error_oracle(error, incluir_tecnico=False, contexto=None):
         explicacion = (
             "No se encontró la persona asociada a la matrícula médica al intentar validar la guardia."
         )
-    elif "20009" in mensaje_mayus:
-        titulo = "❌ REGLA DE NEGOCIO VIOLADA: FECHA DE INICIO INVÁLIDA"
-        explicacion = (
-            "La fecha de inicio de la internación no puede ser una fecha futura posterior a la fecha actual del sistema."
-        )
 
     # --------------------------------------------------------------------------
     # 2. TRIGGER INVÁLIDO O ERROR DE COMPILACIÓN (ORA-04098)
@@ -276,6 +294,18 @@ def traducir_error_oracle(error, incluir_tecnico=False, contexto=None):
             "Los 8 dígitos del medio del CUIL (posiciones 3 a 10) deben ser exactamente iguales al DNI del médico.\n"
             "• Ejemplo: Si el DNI es '38123456', el CUIL debe ser '20381234563' o '27381234564'."
         )
+    elif "CHK_PERSONA_DNI_NUM" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: DNI CON FORMATO INVÁLIDO"
+        explicacion = (
+            "El número de DNI debe contener únicamente dígitos numéricos (7 u 8 dígitos).\n"
+            "• Si tiene 7 dígitos, el sistema lo completa con un '0' adelante automáticamente."
+        )
+    elif "CHK_MEDICO_CUIL_NUM" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: CUIL CON FORMATO INVÁLIDO"
+        explicacion = "El CUIL del médico debe contener exactamente 11 dígitos numéricos (sin guiones ni letras)."
+    elif "CHK_TIENE_DISPUESTO" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: VALOR DE DISPONIBILIDAD INVÁLIDO"
+        explicacion = "El campo 'dispuesto' de la especialidad solo puede tomar los valores 'Si' o 'No'."
     elif "CHK_PACIENTE_SEXO" in mensaje_mayus:
         titulo = "❌ REGLA DE NEGOCIO VIOLADA: SEXO DEL PACIENTE NO VÁLIDO"
         explicacion = "El sistema solo permite registrar los valores 'MASCULINO', 'FEMENINO' u 'OTRO'."
@@ -353,12 +383,9 @@ def traducir_error_oracle(error, incluir_tecnico=False, contexto=None):
     elif "FK_CAMA_HABITACION" in mensaje_mayus:
         titulo = "❌ REGLA DE NEGOCIO VIOLADA: HABITACIÓN NO ENCONTRADA"
         explicacion = "El ID de habitación ingresado no existe en el hospital."
-    elif "FK_CUBIERTA_MEDICO" in mensaje_mayus:
-        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO NO ENCONTRADO"
-        explicacion = "La matrícula médica seleccionada no existe en la base de datos."
-    elif "FK_CUBIERTA_ESPECIALIDAD" in mensaje_mayus:
-        titulo = "❌ REGLA DE NEGOCIO VIOLADA: ESPECIALIDAD NO ENCONTRADA"
-        explicacion = "La especialidad seleccionada no existe en la base de datos."
+    elif "FK_CUBIERTA_TIENE" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO SIN ESPECIALIDAD REGISTRADA"
+        explicacion = "El médico seleccionado no tiene registrada esa especialidad en la tabla TIENE."
     elif "FK_CUBIERTA_GUARDIA" in mensaje_mayus:
         titulo = "❌ REGLA DE NEGOCIO VIOLADA: GUARDIA NO ENCONTRADA"
         explicacion = "La guardia seleccionada no existe en la base de datos."
@@ -795,13 +822,25 @@ class HospitalApp(tk.Tk):
         self.txt_fecha_fin = ttk.Entry(frame_internacion, width=13)
         self.txt_fecha_fin.grid(row=2, column=3, pady=3, sticky="w")
 
+        ttk.Label(frame_internacion, text="Hora Ingreso:").grid(row=3, column=0, sticky="w", pady=3)
+        self.txt_hora_inicio = ttk.Entry(frame_internacion, width=15)
+        self.txt_hora_inicio.insert(0, datetime.now().strftime("%H:%M"))
+        self.txt_hora_inicio.grid(row=3, column=1, pady=3, padx=(0, 6), sticky="w")
+
+        ttk.Label(
+            frame_internacion,
+            text="Formato: HH:MM (ej. 14:30)",
+            font=("Segoe UI", 8, "italic"),
+            foreground="#4A5568"
+        ).grid(row=3, column=2, columnspan=2, sticky="w", pady=3)
+
         lbl_ayuda_fechas = ttk.Label(
             frame_internacion,
-            text="Formato: DD/MM/AAAA (Fecha Fin vacía = internación activa)",
+            text="Formato fechas: DD/MM/AAAA (Fecha Fin vacía = internación activa)",
             font=("Segoe UI", 8, "italic"),
             foreground="#4A5568"
         )
-        lbl_ayuda_fechas.grid(row=3, column=0, columnspan=4, sticky="w", pady=(1, 4))
+        lbl_ayuda_fechas.grid(row=4, column=0, columnspan=4, sticky="w", pady=(1, 4))
 
         btn_ejecutar = tk.Button(
             frame_internacion, 
@@ -813,7 +852,7 @@ class HospitalApp(tk.Tk):
             cursor="hand2",
             command=self.accion_registrar_internacion
         )
-        btn_ejecutar.grid(row=4, column=0, columnspan=4, pady=(6, 2), sticky="ew")
+        btn_ejecutar.grid(row=5, column=0, columnspan=4, pady=(6, 2), sticky="ew")
 
         # 2. Formulario: Traslado / Cambio de Cama y Alta Médica
         frame_traslado = ttk.LabelFrame(columna_izq, text=" 🔄 Gestión de Internación (Traslado / Alta Médica) ", padding=10)
@@ -977,10 +1016,11 @@ class HospitalApp(tk.Tk):
         hab_str = self.txt_hab.get().strip()
         cama_str = self.txt_cama.get().strip()
         fecha_inicio_str = self.txt_fecha_inicio.get().strip() if hasattr(self, 'txt_fecha_inicio') else ""
+        hora_inicio_str = self.txt_hora_inicio.get().strip() if hasattr(self, 'txt_hora_inicio') else ""
         fecha_fin_str = self.txt_fecha_fin.get().strip() if hasattr(self, 'txt_fecha_fin') else ""
 
-        if not (dni and matricula and hab_str and cama_str and fecha_inicio_str):
-            messagebox.showwarning("Campos Incompletos", "Por favor completa el DNI, Matrícula, Habitación, Cama y Fecha de Inicio.")
+        if not (dni and matricula and hab_str and cama_str and fecha_inicio_str and hora_inicio_str):
+            messagebox.showwarning("Campos Incompletos", "Por favor completa el DNI, Matrícula, Habitación, Cama, Fecha de Inicio y Hora de Ingreso.")
             return
 
         try:
@@ -1004,9 +1044,26 @@ class HospitalApp(tk.Tk):
             messagebox.showerror("Fecha Inválida", f"La Fecha de Inicio '{fecha_inicio_str}' no es válida.\nFormato esperado: DD/MM/AAAA (ej. {datetime.now().strftime('%d/%m/%Y')}).")
             return
 
+        # Parsear hora de ingreso para POSEE.fechaHora
+        hora_inicio_t = None
+        for h_fmt in ("%H:%M", "%H:%M:%S"):
+            try:
+                hora_inicio_t = datetime.strptime(hora_inicio_str, h_fmt).time()
+                break
+            except ValueError:
+                pass
+        if hora_inicio_t is None:
+            self.log_error(f"Formato de Hora de Ingreso inválido: '{hora_inicio_str}'. Use HH:MM.")
+            messagebox.showerror("Hora Inválida", f"La Hora de Ingreso '{hora_inicio_str}' no es válida.\nFormato esperado: HH:MM (ej. {datetime.now().strftime('%H:%M')}).")
+            return
+
+        fecha_inicio_solo_fecha = datetime.combine(fecha_inicio_dt.date(), datetime.min.time())
+        fecha_hora_posee = datetime.combine(fecha_inicio_dt.date(), hora_inicio_t)
+
         # Parsear fecha de fin (opcional)
-        fecha_fin_dt = None
+        fecha_fin_solo_fecha = None
         if fecha_fin_str:
+            fecha_fin_dt = None
             for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
                 try:
                     fecha_fin_dt = datetime.strptime(fecha_fin_str, fmt)
@@ -1018,7 +1075,8 @@ class HospitalApp(tk.Tk):
                 messagebox.showerror("Fecha Inválida", f"La Fecha de Fin '{fecha_fin_str}' no es válida.\nFormato esperado: DD/MM/AAAA o dejar en blanco.")
                 return
 
-            if fecha_fin_dt < fecha_inicio_dt:
+            fecha_fin_solo_fecha = datetime.combine(fecha_fin_dt.date(), datetime.min.time())
+            if fecha_fin_solo_fecha < fecha_inicio_solo_fecha:
                 self.log_error("Fecha de Fin anterior a Fecha de Inicio.")
                 messagebox.showerror("Fechas Inconsistentes", "La Fecha de Fin (alta) no puede ser anterior a la Fecha de Inicio de la internación.")
                 return
@@ -1026,21 +1084,21 @@ class HospitalApp(tk.Tk):
         conn = None
         cursor = None
         try:
-            self.log_info(f"Iniciando transacción: Asignando Paciente DNI={dni} a Hab={hab}, Cama={cama} con Médico={matricula} (Inicio={fecha_inicio_str})...")
+            self.log_info(f"Iniciando transacción: Asignando Paciente DNI={dni} a Hab={hab}, Cama={cama} con Médico={matricula} (Inicio={fecha_inicio_str} {hora_inicio_str})...")
             conn = obtener_conexion()
             cursor = conn.cursor()
 
             # Ejecutar Stored Procedure transaccional 'sp_registrar_internacion' en la base de datos
             id_internacion_var = cursor.var(oracledb.NUMBER)
             invocar_sp(cursor, "sp_registrar_internacion", [
-                dni, matricula, hab, cama, fecha_inicio_dt, fecha_fin_dt, id_internacion_var
+                dni, matricula, hab, cama, fecha_inicio_solo_fecha, fecha_fin_solo_fecha, id_internacion_var, fecha_hora_posee
             ])
             id_internacion = int(id_internacion_var.getvalue())
 
-            if fecha_fin_dt:
-                mensaje_exito = f"Transacción confirmada por Stored Procedure (COMMIT): Internación #{id_internacion} registrada como finalizada (Inicio: {fecha_inicio_str}, Fin: {fecha_fin_str}). Cama {cama} de Hab {hab} permanece LIBRE."
+            if fecha_fin_solo_fecha:
+                mensaje_exito = f"Transacción confirmada por Stored Procedure (COMMIT): Internación #{id_internacion} registrada como finalizada (Inicio: {fecha_inicio_str} {hora_inicio_str}, Fin: {fecha_fin_str}) sin modificar el estado actual de la Cama {cama} de Hab {hab}."
             else:
-                mensaje_exito = f"Transacción confirmada por Stored Procedure (COMMIT): Internación #{id_internacion} creada con éxito (Inicio: {fecha_inicio_str}). Cama {cama} de Hab {hab} asignada y en estado OCUPADA."
+                mensaje_exito = f"Transacción confirmada por Stored Procedure (COMMIT): Internación #{id_internacion} creada con éxito (Inicio: {fecha_inicio_str} {hora_inicio_str}). Cama {cama} de Hab {hab} asignada y en estado OCUPADA."
 
             self.log_exito(mensaje_exito)
             messagebox.showinfo("Transacción Exitosa", mensaje_exito)
@@ -1052,6 +1110,9 @@ class HospitalApp(tk.Tk):
             if hasattr(self, 'txt_fecha_inicio'):
                 self.txt_fecha_inicio.delete(0, tk.END)
                 self.txt_fecha_inicio.insert(0, datetime.now().strftime("%d/%m/%Y"))
+            if hasattr(self, 'txt_hora_inicio'):
+                self.txt_hora_inicio.delete(0, tk.END)
+                self.txt_hora_inicio.insert(0, datetime.now().strftime("%H:%M"))
             if hasattr(self, 'txt_fecha_fin'):
                 self.txt_fecha_fin.delete(0, tk.END)
 
@@ -2848,7 +2909,6 @@ class HospitalApp(tk.Tk):
             if conn:
                 conn.close()
 
-        asignaciones_originales = {(r[0], r[3]) for r in asignaciones_actuales}
         asignaciones = [
             {
                 "mat": r[0],
@@ -3034,7 +3094,7 @@ class HospitalApp(tk.Tk):
             asignaciones[idx] = nuevo
             refrescar_tree_asig()
             tree_asig.selection_set(str(idx))
-            self.log_evento(f"Médico reemplazado en guardia: '{med_txt_anterior}' ({esp_txt_anterior}) por '{med_txt_nueva}' ({esp_txt_nueva}).")
+            self.log_info(f"Médico reemplazado en guardia: '{med_txt_anterior}' ({esp_txt_anterior}) por '{med_txt_nueva}' ({esp_txt_nueva}).")
 
         def quitar_medico_lista():
             if len(asignaciones) <= 1:
@@ -3079,10 +3139,6 @@ class HospitalApp(tk.Tk):
                 )
                 return
 
-            conn_save = self.obtener_conexion_guardias()
-            if not conn_save:
-                return
-
             fecha_dt = None
             for f_fmt in ("%Y-%m-%d", "%d/%m/%Y"):
                 try:
@@ -3094,47 +3150,18 @@ class HospitalApp(tk.Tk):
                 messagebox.showerror("Error", "Formato de fecha inválido. Use DD/MM/AAAA o AAAA-MM-DD.", parent=modal)
                 return
 
-            nuevo_set = {(a["mat"], a["id_esp"]) for a in asignaciones}
-            a_eliminar = asignaciones_originales - nuevo_set
-            a_insertar = nuevo_set - asignaciones_originales
+            conn_save = self.obtener_conexion_guardias()
+            if not conn_save:
+                return
+
+            asignaciones_str = ",".join(f"{a['mat']}:{a['id_esp']}" for a in asignaciones)
 
             cur_save = None
             try:
                 cur_save = conn_save.cursor()
 
-                # Actualizar fecha y turno de la guardia solo si cambiaron
-                fecha_actual_dt = None
-                for f_fmt in ("%Y-%m-%d", "%d/%m/%Y"):
-                    try:
-                        fecha_actual_dt = datetime.strptime(fecha_actual.strip(), f_fmt).date()
-                        break
-                    except ValueError:
-                        pass
-
-                cambio_fecha_turno = (fecha_dt != fecha_actual_dt) or (turno_nuevo != turno_actual.strip().upper())
-                if cambio_fecha_turno:
-                    invocar_sp(cur_save, "sp_actualizar_guardia", [id_guardia, fecha_dt, turno_nuevo])
-
-                # Modificar asignaciones de médicos mediante Stored Procedures
-                list_del = sorted(list(a_eliminar))
-                list_ins = sorted(list(a_insertar))
-                min_len = min(len(list_del), len(list_ins))
-
-                # Reemplazos directos 1 a 1 (UPDATE en BD) para que la guardia nunca quede transitoriamente con 0 médicos
-                for i in range(min_len):
-                    mat_del, esp_del = list_del[i]
-                    mat_ins, esp_ins = list_ins[i]
-                    invocar_sp(cur_save, "sp_reemplazar_medico_guardia", [id_guardia, mat_del, esp_del, mat_ins, esp_ins])
-
-                # Asignar nuevos médicos excedentes (si se sumaron más de los que se quitaron)
-                for i in range(min_len, len(list_ins)):
-                    mat_ins, esp_ins = list_ins[i]
-                    invocar_sp(cur_save, "sp_asignar_medico_guardia", [id_guardia, mat_ins, esp_ins])
-
-                # Desasignar médicos eliminados excedentes (si se redujo la cantidad pero queda al menos uno)
-                for i in range(min_len, len(list_del)):
-                    mat_del, esp_del = list_del[i]
-                    invocar_sp(cur_save, "sp_desasignar_medico_guardia", [id_guardia, mat_del, esp_del])
+                # Modificar fecha, turno y asignaciones en una única transacción atómica (SP)
+                invocar_sp(cur_save, "sp_modificar_guardia", [id_guardia, fecha_dt, turno_nuevo, asignaciones_str])
 
                 msg = f"Guardia #{id_guardia} modificada con éxito ({turno_nuevo} del {fecha_nueva}) por usuario '{self.usuario_guardias.upper()}'."
                 self.log_exito(msg)
@@ -3230,13 +3257,6 @@ class HospitalApp(tk.Tk):
     # --------------------------------------------------------------------------
     # MÉTODOS AUXILIARES: RECORRIDOS Y RONDAS
     # --------------------------------------------------------------------------
-    def _obtener_opciones_medicos(self, cursor):
-        cur_med = cursor.connection.cursor()
-        invocar_sp(cursor, "sp_listar_medicos_combo", [cur_med])
-        opciones = [f"{m[0]} - {m[1]}, {m[2]}" for m in cur_med.fetchall()]
-        cur_med.close()
-        return opciones
-
     def _obtener_opciones_rondas(self, cursor):
         cur_ron = cursor.connection.cursor()
         invocar_sp(cursor, "sp_listar_rondas_combo", [cur_ron])
@@ -3245,9 +3265,9 @@ class HospitalApp(tk.Tk):
         return [f"Ronda #{r[0]} | {r[2]} (Turno {r[1]})" for r in filas]
 
     def _parsear_fecha_recorrido(self, fecha_str):
-        for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
             try:
-                return datetime.strptime(fecha_str, fmt)
+                return datetime.strptime(fecha_str, fmt).date()
             except ValueError:
                 pass
         return None
@@ -3272,12 +3292,12 @@ class HospitalApp(tk.Tk):
         self.rec_cb_ronda = ttk.Combobox(frame_form, state="readonly", width=34)
         self.rec_cb_ronda.grid(row=3, column=0, sticky="ew", pady=(0, 8))
 
-        # Fecha y Hora
-        ttk.Label(frame_form, text="Fecha y Hora del Recorrido:", font=("Segoe UI", 9, "bold")).grid(row=4, column=0, sticky="w", pady=(2, 2))
+        # Fecha
+        ttk.Label(frame_form, text="Fecha del Recorrido:", font=("Segoe UI", 9, "bold")).grid(row=4, column=0, sticky="w", pady=(2, 2))
         self.rec_txt_fecha = ttk.Entry(frame_form, width=34)
-        self.rec_txt_fecha.insert(0, datetime.now().strftime("%d/%m/%Y %H:%M"))
+        self.rec_txt_fecha.insert(0, datetime.now().strftime("%d/%m/%Y"))
         self.rec_txt_fecha.grid(row=5, column=0, sticky="ew", pady=(0, 2))
-        ttk.Label(frame_form, text="Formato: DD/MM/AAAA HH:MI", font=("Segoe UI", 8, "italic"), foreground="#4A5568").grid(row=6, column=0, sticky="w", pady=(0, 10))
+        ttk.Label(frame_form, text="Formato: DD/MM/AAAA", font=("Segoe UI", 8, "italic"), foreground="#4A5568").grid(row=6, column=0, sticky="w", pady=(0, 10))
 
         btn_guardar_rec = tk.Button(
             frame_form,
@@ -3311,7 +3331,7 @@ class HospitalApp(tk.Tk):
         cols = ("id_recorrido", "fecha", "matricula", "medico", "id_ronda", "turno", "dia", "cant_com")
         self.tabla_recorridos = ttk.Treeview(frame_tabla, columns=cols, show="headings", height=14)
         self.tabla_recorridos.heading("id_recorrido", text="ID Recorrido")
-        self.tabla_recorridos.heading("fecha", text="Fecha / Hora")
+        self.tabla_recorridos.heading("fecha", text="Fecha")
         self.tabla_recorridos.heading("matricula", text="Matrícula")
         self.tabla_recorridos.heading("medico", text="Médico")
         self.tabla_recorridos.heading("id_ronda", text="Ronda")
@@ -3358,12 +3378,12 @@ class HospitalApp(tk.Tk):
             messagebox.showwarning("Ronda Requerida", "Por favor selecciona una ronda de la lista.")
             return
         if not fecha_str:
-            messagebox.showwarning("Fecha Requerida", "Por favor ingresa la fecha y hora del recorrido.")
+            messagebox.showwarning("Fecha Requerida", "Por favor ingresa la fecha del recorrido.")
             return
 
         fecha_dt = self._parsear_fecha_recorrido(fecha_str)
         if fecha_dt is None:
-            messagebox.showerror("Fecha Inválida", f"El formato de fecha '{fecha_str}' no es válido.\nFormatos soportados: DD/MM/AAAA HH:MI o AAAA-MM-DD HH:MI")
+            messagebox.showerror("Fecha Inválida", f"El formato de fecha '{fecha_str}' no es válido.\nFormatos soportados: DD/MM/AAAA o AAAA-MM-DD")
             return
 
         matricula = med_sel.split(" - ")[0].strip()
@@ -3387,7 +3407,7 @@ class HospitalApp(tk.Tk):
             messagebox.showinfo("Recorrido Registrado", msg)
 
             self.rec_txt_fecha.delete(0, tk.END)
-            self.rec_txt_fecha.insert(0, datetime.now().strftime("%d/%m/%Y %H:%M"))
+            self.rec_txt_fecha.insert(0, datetime.now().strftime("%d/%m/%Y"))
             self.cargar_lista_recorridos()
 
             if hasattr(self, 'com_cb_medico') and self.com_cb_medico.get() == med_sel:
@@ -3581,7 +3601,7 @@ class HospitalApp(tk.Tk):
         cols_rec = ("id_recorrido", "fecha", "ronda", "dia", "turno", "cant_comentarios")
         self.com_tabla_recorridos_med = ttk.Treeview(frame_recs_med, columns=cols_rec, show="headings", height=6)
         self.com_tabla_recorridos_med.heading("id_recorrido", text="ID Recorrido")
-        self.com_tabla_recorridos_med.heading("fecha", text="Fecha / Hora")
+        self.com_tabla_recorridos_med.heading("fecha", text="Fecha")
         self.com_tabla_recorridos_med.heading("ronda", text="Ronda")
         self.com_tabla_recorridos_med.heading("dia", text="Día")
         self.com_tabla_recorridos_med.heading("turno", text="Turno")

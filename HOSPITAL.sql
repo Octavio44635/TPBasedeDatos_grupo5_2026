@@ -457,7 +457,7 @@ insert into cama (
 ) values
    ( 1,
      1,
-     'OCUPADA' );
+     'LIBRE' );
 insert into cama (
    id_habitacion,
    nro_cama,
@@ -499,14 +499,20 @@ insert into vacacion (
      to_date('2026-11-30','YYYY-MM-DD') );
 
 
-insert into internacion (
-   fecha_inicio,
-   numero_de_dni,
-   numero_de_matricula
-) values
-   ( to_date('2026-11-15','YYYY-MM-DD'),
-     '11111111',
-     'M103' );
+DECLARE
+   v_id_internacion NUMBER;
+BEGIN
+   sp_registrar_internacion(
+      p_dni            => '11111111',
+      p_matricula      => 'M103',
+      p_id_habitacion  => 1,
+      p_nro_cama       => 1,
+      p_fecha_inicio   => to_date('2026-11-15','YYYY-MM-DD'),
+      p_fecha_fin      => NULL,
+      p_id_internacion => v_id_internacion
+   );
+END;
+/
 
 -- Caso de prueba del TRIGGER trg_evitar_autoatencion (descomentar para probar que rechaza la autoatencion)
 -- INSERT INTO INTERNACION (fecha_inicio, numero_de_DNI, numero_de_matricula) VALUES (SYSDATE - 1, '11111111', 'M100');
@@ -514,29 +520,16 @@ insert into internacion (
 -- Caso de prueba del TRIGGER trg_validar_fecha_inicio_int (descomentar para probar que rechaza fecha futura mayor a SYSDATE)
 -- INSERT INTO INTERNACION (fecha_inicio, numero_de_DNI, numero_de_matricula) VALUES (SYSDATE + 1, '22222222', 'M103');
 
--- Caso de prueba del TRIGGER trg_medico_internacion_vacaciones (descomentar para probar que rechaza internación si el médico está de vacaciones, debe arrojar error ORA-20048)
--- INSERT INTO INTERNACION (fecha_inicio, numero_de_DNI, numero_de_matricula) VALUES (SYSDATE - 2, '22222222', 'M102');
-
-insert into posee (
-   id_internacion,
-   id_habitacion,
-   nro_cama,
-   fechahora
-) values
-   ( 1,
-     1,
-     1,
-     systimestamp - interval '4' day );
 
 
 
-
+-- Recorridos de prueba en fecha lunes (16/11/2026) coherentes con las rondas 1 y 2 (LUNES, turnos 1 y 2)
 insert into recorrido (
    fecha,
    id_ronda,
    numero_de_matricula
 ) values
-   ( sysdate - 2,
+   ( to_date('2026-11-16','YYYY-MM-DD'),
      1,
      'M101' );
 insert into recorrido (
@@ -544,7 +537,7 @@ insert into recorrido (
    id_ronda,
    numero_de_matricula
 ) values
-   ( sysdate - 1,
+   ( to_date('2026-11-16','YYYY-MM-DD'),
      2,
      'M101' );
 

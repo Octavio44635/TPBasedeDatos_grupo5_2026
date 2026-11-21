@@ -85,10 +85,7 @@ GRANT EXECUTE ON HOSPITAL.sp_dar_alta_internacion         TO "44444444", "333333
 GRANT EXECUTE ON HOSPITAL.sp_obtener_datos_alta           TO "44444444", "33333333";
 GRANT EXECUTE ON HOSPITAL.sp_consultar_cama_actual        TO "44444444", "33333333";
 GRANT EXECUTE ON HOSPITAL.sp_crear_y_asignar_guardia      TO "44444444", "33333333";
-GRANT EXECUTE ON HOSPITAL.sp_actualizar_guardia           TO "44444444", "33333333";
-GRANT EXECUTE ON HOSPITAL.sp_asignar_medico_guardia       TO "44444444", "33333333";
-GRANT EXECUTE ON HOSPITAL.sp_desasignar_medico_guardia    TO "44444444", "33333333";
-GRANT EXECUTE ON HOSPITAL.sp_reemplazar_medico_guardia    TO "44444444", "33333333";
+GRANT EXECUTE ON HOSPITAL.sp_modificar_guardia            TO "44444444", "33333333";
 GRANT EXECUTE ON HOSPITAL.sp_eliminar_guardia             TO "44444444", "33333333";
 GRANT EXECUTE ON HOSPITAL.sp_registrar_recorrido          TO "44444444", "33333333";
 GRANT EXECUTE ON HOSPITAL.sp_eliminar_recorrido           TO "44444444", "33333333";
@@ -130,10 +127,7 @@ CREATE OR REPLACE PUBLIC SYNONYM sp_dar_alta_internacion         FOR HOSPITAL.sp
 CREATE OR REPLACE PUBLIC SYNONYM sp_obtener_datos_alta           FOR HOSPITAL.sp_obtener_datos_alta;
 CREATE OR REPLACE PUBLIC SYNONYM sp_consultar_cama_actual        FOR HOSPITAL.sp_consultar_cama_actual;
 CREATE OR REPLACE PUBLIC SYNONYM sp_crear_y_asignar_guardia      FOR HOSPITAL.sp_crear_y_asignar_guardia;
-CREATE OR REPLACE PUBLIC SYNONYM sp_actualizar_guardia           FOR HOSPITAL.sp_actualizar_guardia;
-CREATE OR REPLACE PUBLIC SYNONYM sp_asignar_medico_guardia       FOR HOSPITAL.sp_asignar_medico_guardia;
-CREATE OR REPLACE PUBLIC SYNONYM sp_desasignar_medico_guardia    FOR HOSPITAL.sp_desasignar_medico_guardia;
-CREATE OR REPLACE PUBLIC SYNONYM sp_reemplazar_medico_guardia    FOR HOSPITAL.sp_reemplazar_medico_guardia;
+CREATE OR REPLACE PUBLIC SYNONYM sp_modificar_guardia            FOR HOSPITAL.sp_modificar_guardia;
 CREATE OR REPLACE PUBLIC SYNONYM sp_eliminar_guardia             FOR HOSPITAL.sp_eliminar_guardia;
 CREATE OR REPLACE PUBLIC SYNONYM sp_registrar_recorrido          FOR HOSPITAL.sp_registrar_recorrido;
 CREATE OR REPLACE PUBLIC SYNONYM sp_eliminar_recorrido           FOR HOSPITAL.sp_eliminar_recorrido;
