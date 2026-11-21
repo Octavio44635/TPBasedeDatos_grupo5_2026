@@ -179,14 +179,35 @@ def traducir_error_oracle(error, incluir_tecnico=False, contexto=None):
             "El médico ya tiene asignada otra guardia en la misma fecha y turno.\n"
             "Por regla hospitalaria y límite laboral, un médico no puede estar cubriendo dos guardias en el mismo turno del mismo día."
         )
+    elif "20016" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: HABITACIÓN INEXISTENTE"
+        explicacion = "La habitación seleccionada no existe en la base de datos del hospital."
     elif "20017" in mensaje_mayus:
         titulo = "❌ REGLA DE NEGOCIO VIOLADA: CAMA INEXISTENTE"
         explicacion = "La habitación o cama seleccionada no existe en la base de datos."
+    elif "20018" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: INTERNACIÓN NO ENCONTRADA"
+        explicacion = "El ID de internación ingresado no corresponde a ninguna internación registrada en el hospital."
     elif "20019" in mensaje_mayus or "YA SE ENCUENTRA OCUPADA" in mensaje_mayus or "NO ESTÁ DISPONIBLE" in mensaje_mayus or "NO ESTA DISPONIBLE" in mensaje_mayus:
         titulo = "❌ REGLA DE NEGOCIO VIOLADA: CAMA NO DISPONIBLE"
         explicacion = (
             "La cama seleccionada no se encuentra disponible (ya está asignada u ocupada por otro paciente).\n"
             "Por regla de gestión hospitalaria, no se puede internar ni trasladar a un paciente a una cama que no esté en estado LIBRE."
+        )
+    elif "20020" in mensaje_mayus or "MISMA CAMA" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: PACIENTE YA ASIGNADO A ESTA CAMA"
+        explicacion = "El paciente ya se encuentra actualmente en esa misma habitación y cama. Selecciona una cama diferente para el traslado."
+    elif "20048" in mensaje_mayus or ("VACACION" in mensaje_mayus and ("INTERNACION" in mensaje_mayus or "INTERNACIÓN" in mensaje_mayus)):
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO EN PERÍODO DE VACACIONES"
+        explicacion = (
+            "El médico seleccionado se encuentra en su período de vacaciones durante las fechas de la internación.\n"
+            "Por normativa hospitalaria y descanso laboral, un profesional de la salud no puede tener a su cargo una internación si se encuentra de vacaciones."
+        )
+    elif "20049" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO CON INTERNACIONES A CARGO"
+        explicacion = (
+            "No se pueden registrar vacaciones para el médico porque tiene una o más internaciones activas a su cargo durante ese período.\n"
+            "Debe reasignar o dar de alta las internaciones antes de iniciar su período de vacaciones."
         )
     elif "20021" in mensaje_mayus or "VACACIONES" in mensaje_mayus or "PERÍODO DE VACACIONES" in mensaje_mayus or "PERIODO DE VACACIONES" in mensaje_mayus:
         titulo = "❌ REGLA DE NEGOCIO VIOLADA: MÉDICO DE VACACIONES"
@@ -209,7 +230,7 @@ def traducir_error_oracle(error, incluir_tecnico=False, contexto=None):
         explicacion = (
             "En la tabla TIENE se registró que este médico NO está dispuesto a realizar guardias para esta especialidad."
         )
-    elif "TRG_MEDICO_DISPUESTO" in mensaje_mayus and (codigo_oracle == 1403 or "01403" in mensaje_mayus):
+    elif "20047" in mensaje_mayus or ("TRG_MEDICO_DISPUESTO" in mensaje_mayus and (codigo_oracle == 1403 or "01403" in mensaje_mayus)) or "NO TIENE REGISTRADA" in mensaje_mayus:
         titulo = "❌ REGLA DE NEGOCIO VIOLADA: ESPECIALIDAD NO REGISTRADA PARA EL MÉDICO"
         explicacion = (
             "El médico seleccionado no tiene registrada esa especialidad en la tabla TIENE, por lo que no puede cubrirla en una guardia."
@@ -366,6 +387,15 @@ def traducir_error_oracle(error, incluir_tecnico=False, contexto=None):
         titulo = "❌ REGLA DE NEGOCIO VIOLADA"
         explicacion = f"{texto_limpio}"
 
+    elif "PLS-00201" in mensaje_mayus or ("ORA-06550" in mensaje_mayus and ("SE DEBE DECLARAR" in mensaje_mayus or "MUST BE DECLARED" in mensaje_mayus)):
+        m_ident = re.search(r"['\"]([a-zA-Z0-9_]+)['\"]", mensaje_original)
+        nombre_obj = m_ident.group(1) if m_ident else "el procedimiento"
+        titulo = "⚠️ PROCEDIMIENTO NO DECLARADO EN ORACLE"
+        explicacion = (
+            f"El Stored Procedure '{nombre_obj}' no está compilado en la base de datos o el usuario no tiene permisos de ejecución.\n\n"
+            "Solución: Haz clic en el botón '⚡ RESET TOTAL (Tablas + Datos + Usuarios)' en la cabecera de la aplicación para compilar automáticamente todos los Stored Procedures y otorgar sus permisos."
+        )
+
     # --------------------------------------------------------------------------
     # 7. ERRORES GENERALES
     # --------------------------------------------------------------------------
@@ -415,6 +445,19 @@ def obtener_conexion(user=None, password=None):
         finally:
             cur.close()
     return conn
+
+def invocar_sp(cursor, sp_name, params):
+    """
+    Invoca un Stored Procedure soportando sinónimos públicos o prefijo explícito de esquema (ej: HOSPITAL.<sp>).
+    """
+    try:
+        return cursor.callproc(sp_name, params)
+    except oracledb.DatabaseError as e:
+        dueno = os.getenv('DB_USER')
+        msg = str(e)
+        if dueno and ("PLS-00201" in msg or ("ORA-06550" in msg and sp_name.upper() in msg.upper())):
+            return cursor.callproc(f"{dueno.strip().upper()}.{sp_name}", params)
+        raise
 
 # ==============================================================================
 # APLICACIÓN PRINCIPAL
@@ -987,74 +1030,17 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            # 1. Bloqueo y verificación de la cama
-            cursor.execute("""
-                SELECT estado 
-                FROM CAMA 
-                WHERE id_habitacion = :1 AND nro_cama = :2 
-                FOR UPDATE 
-            """, [hab, cama]) 
-            
-            fila_cama = cursor.fetchone()
-            if not fila_cama:
-                raise Exception(f"La cama {cama} de la habitación {hab} no existe en la base de datos.")
-            if fecha_fin_dt is None and fila_cama[0].upper() != 'LIBRE':
-                raise Exception(f"La cama {cama} de la habitación {hab} no está disponible (Estado actual: '{fila_cama[0]}').")
-
-            # 1.5. Validar regla médica de autoatención
-            cursor.execute("SELECT numero_de_DNI FROM MEDICO WHERE numero_de_matricula = :1", [matricula])
-            fila_med = cursor.fetchone()
-            if fila_med and str(fila_med[0]).strip() == str(dni).strip():
-                raise Exception("Regla médica de negocio: Un médico no puede ser el profesional a cargo de su propia internación (el DNI del paciente coincide con el DNI del médico).")
-
-            # 2. Inserción de la Internación
-            # Si fecha_inicio > SYSDATE, el Trigger 'trg_validar_fecha_inicio_int' abortará la operación con ORA-20011.
-            fecha_inicio_iso = fecha_inicio_dt.strftime("%Y-%m-%d %H:%M:%S")
-            fecha_fin_iso = fecha_fin_dt.strftime("%Y-%m-%d %H:%M:%S") if fecha_fin_dt else None
-
+            # Ejecutar Stored Procedure transaccional 'sp_registrar_internacion' en la base de datos
             id_internacion_var = cursor.var(oracledb.NUMBER)
-            if fecha_fin_iso:
-                cursor.execute("""
-                    INSERT INTO INTERNACION (fecha_inicio, fecha_fin, numero_de_DNI, numero_de_matricula)
-                    VALUES (TO_DATE(:1, 'YYYY-MM-DD HH24:MI:SS'), TO_DATE(:2, 'YYYY-MM-DD HH24:MI:SS'), :3, :4)
-                    RETURNING id_internacion INTO :5
-                """, [fecha_inicio_iso, fecha_fin_iso, dni, matricula, id_internacion_var])
-            else:
-                cursor.execute("""
-                    INSERT INTO INTERNACION (fecha_inicio, fecha_fin, numero_de_DNI, numero_de_matricula)
-                    VALUES (TO_DATE(:1, 'YYYY-MM-DD HH24:MI:SS'), NULL, :2, :3)
-                    RETURNING id_internacion INTO :4
-                """, [fecha_inicio_iso, dni, matricula, id_internacion_var])
-            
-            id_internacion = int(id_internacion_var.getvalue()[0])
+            invocar_sp(cursor, "sp_registrar_internacion", [
+                dni, matricula, hab, cama, fecha_inicio_dt, fecha_fin_dt, id_internacion_var
+            ])
+            id_internacion = int(id_internacion_var.getvalue())
 
-            # 3. Insertar en POSEE:
-            # En la base de datos, el Trigger 'trg_ocupar_cama_posee' valida automáticamente que la cama
-            # esté LIBRE y la pasa a 'OCUPADA' para internaciones activas.
-            if fecha_fin_dt is not None:
-                cursor.execute("""
-                    INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
-                    VALUES (:1, :2, :3, TO_TIMESTAMP(:4, 'YYYY-MM-DD HH24:MI:SS'))
-                """, [id_internacion, hab, cama, fecha_inicio_iso])
+            if fecha_fin_dt:
+                mensaje_exito = f"Transacción confirmada por Stored Procedure (COMMIT): Internación #{id_internacion} registrada como finalizada (Inicio: {fecha_inicio_str}, Fin: {fecha_fin_str}). Cama {cama} de Hab {hab} permanece LIBRE."
             else:
-                cursor.execute("""
-                    INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
-                    VALUES (:1, :2, :3, SYSTIMESTAMP)
-                """, [id_internacion, hab, cama])
-
-            # Fallback de compatibilidad: si la BD aún no tuviese compilado el trigger 'trg_ocupar_cama_posee'
-            if fecha_fin_dt is None:
-                cursor.execute("SELECT estado FROM CAMA WHERE id_habitacion = :1 AND nro_cama = :2", [hab, cama])
-                row_chk = cursor.fetchone()
-                if row_chk and row_chk[0].upper() == 'LIBRE':
-                    cursor.execute("UPDATE CAMA SET estado = 'OCUPADA' WHERE id_habitacion = :1 AND nro_cama = :2", [hab, cama])
-
-            # Confirmar transacción completa
-            conn.commit()
-            if fecha_fin_dt is None:
-                mensaje_exito = f"Transacción confirmada (COMMIT): Internación #{id_internacion} creada con éxito (Inicio: {fecha_inicio_str}). Cama {cama} de Hab {hab} quedó OCUPADA."
-            else:
-                mensaje_exito = f"Transacción confirmada (COMMIT): Internación #{id_internacion} registrada como finalizada (Inicio: {fecha_inicio_str}, Fin: {fecha_fin_str}). Cama {cama} de Hab {hab} permanece LIBRE."
+                mensaje_exito = f"Transacción confirmada por Stored Procedure (COMMIT): Internación #{id_internacion} creada con éxito (Inicio: {fecha_inicio_str}). Cama {cama} de Hab {hab} asignada y en estado OCUPADA."
 
             self.log_exito(mensaje_exito)
             messagebox.showinfo("Transacción Exitosa", mensaje_exito)
@@ -1124,14 +1110,10 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT i.id_internacion, p.nombre, p.apellido, i.numero_de_DNI
-                FROM INTERNACION i
-                JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
-                WHERE i.fecha_fin IS NULL
-                ORDER BY i.id_internacion DESC
-            """)
-            filas = cursor.fetchall()
+            cur_int = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_listar_internaciones_activas", [cur_int])
+            filas = cur_int.fetchall()
+            cur_int.close()
             cursor.close()
             opciones = [f"{f[0]} - {f[1]} {f[2]} (DNI {f[3]})" for f in filas]
             self.txt_traslado_id_int['values'] = opciones
@@ -1172,29 +1154,16 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT i.id_internacion, p.nombre, p.apellido, i.numero_de_DNI, i.fecha_inicio, i.fecha_fin
-                FROM INTERNACION i
-                JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
-                WHERE i.id_internacion = :1
-            """, [id_int])
-            row = cursor.fetchone()
+            cur_datos = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_consultar_cama_actual", [id_int, cur_datos])
+            row = cur_datos.fetchone()
+            cur_datos.close()
+            cursor.close()
             if not row:
                 self.lbl_traslado_info.config(text=f"❌ La internación #{id_int} no existe.", foreground="#C53030")
-                cursor.close()
                 return
 
-            id_i, nom, ape, dni, f_ini, f_fin = row
-
-            cursor.execute("""
-                SELECT id_habitacion, nro_cama
-                FROM POSEE
-                WHERE id_internacion = :1
-                ORDER BY fechaHora DESC
-                FETCH FIRST 1 ROW ONLY
-            """, [id_int])
-            row_cama = cursor.fetchone()
-            cursor.close()
+            pac_nom, dni, hab_act, cama_act, estado_cama, sec_nom, fh_pos, f_ini, f_fin = row
 
             # Sincronizar también el ID en la caja de Visitas Médicas (Stored Procedure)
             if hasattr(self, 'txt_id_int_comentario'):
@@ -1205,18 +1174,17 @@ class HospitalApp(tk.Tk):
 
             if f_fin is not None:
                 self.lbl_traslado_info.config(
-                    text=f"⚠️ Paciente {nom} {ape} (DNI {dni}) - ALTA MÉDICA OTORGADA ({f_fin.strftime('%d/%m/%Y')}) | Ingreso: {f_ini_str}.",
+                    text=f"⚠️ Paciente {pac_nom} (DNI {dni}) - ALTA MÉDICA OTORGADA ({f_fin.strftime('%d/%m/%Y')}) | Ingreso: {f_ini_str}.",
                     foreground="#C53030"
                 )
-            elif row_cama:
-                hab_act, cama_act = row_cama
+            elif hab_act is not None and cama_act is not None:
                 self.lbl_traslado_info.config(
-                    text=f"👤 {nom} {ape} (DNI {dni}) | Ingreso: {f_ini_str} | Cama actual: Hab {hab_act}, Cama {cama_act}",
+                    text=f"👤 {pac_nom} (DNI {dni}) | Ingreso: {f_ini_str} | Cama actual: Hab {hab_act}, Cama {cama_act}",
                     foreground="#2B6CB0"
                 )
             else:
                 self.lbl_traslado_info.config(
-                    text=f"👤 {nom} {ape} (DNI {dni}) | Ingreso: {f_ini_str} | Sin cama previa asignada",
+                    text=f"👤 {pac_nom} (DNI {dni}) | Ingreso: {f_ini_str} | Sin cama previa asignada",
                     foreground="#4A5568"
                 )
         except Exception as e:
@@ -1250,72 +1218,27 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            # 1. Validar existencia y estado de la internación
-            cursor.execute("""
-                SELECT i.id_internacion, i.fecha_inicio, i.fecha_fin, i.numero_de_DNI, p.nombre, p.apellido
-                FROM INTERNACION i
-                JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
-                WHERE i.id_internacion = :1
-            """, [id_int])
-            row_int = cursor.fetchone()
-            if not row_int:
-                raise Exception(f"La internación #{id_int} no existe en la base de datos.")
-            if row_int[2] is not None:
-                raise Exception(f"La internación #{id_int} ya finalizó (alta médica otorgada el {row_int[2].strftime('%d/%m/%Y')}). No se puede cambiar de cama a un paciente con alta.")
+            # Consultar datos actuales del paciente y cama mediante Stored Procedure
+            cur_datos = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_consultar_cama_actual", [id_int, cur_datos])
+            row_cama_actual = cur_datos.fetchone()
+            cur_datos.close()
+            paciente_nombre = f"{row_cama_actual[0]} (DNI {row_cama_actual[1]})" if row_cama_actual else f"Internación #{id_int}"
+            hab_anterior, cama_anterior = (row_cama_actual[2], row_cama_actual[3]) if row_cama_actual else (None, None)
 
-            paciente_nombre = f"{row_int[4]} {row_int[5]} (DNI {row_int[3]})"
-
-            # 2. Consultar cama actual del paciente en POSEE
-            cursor.execute("""
-                SELECT id_habitacion, nro_cama
-                FROM POSEE
-                WHERE id_internacion = :1
-                ORDER BY fechaHora DESC
-                FETCH FIRST 1 ROW ONLY
-            """, [id_int])
-            row_cama_actual = cursor.fetchone()
-            hab_anterior, cama_anterior = (row_cama_actual[0], row_cama_actual[1]) if row_cama_actual else (None, None)
-
-            if hab_anterior == hab_nueva and cama_anterior == cama_nueva:
-                raise Exception(f"El paciente {paciente_nombre} ya se encuentra actualmente en la Habitación {hab_nueva}, Cama {cama_nueva}. Por favor selecciona una cama diferente para el traslado.")
-
-            # 3. Bloqueo y verificación de la nueva cama
-            cursor.execute("""
-                SELECT estado 
-                FROM CAMA 
-                WHERE id_habitacion = :1 AND nro_cama = :2 
-                FOR UPDATE
-            """, [hab_nueva, cama_nueva])
-            fila_cama = cursor.fetchone()
-            if not fila_cama:
-                raise Exception(f"La cama {cama_nueva} de la habitación {hab_nueva} no existe en la base de datos.")
-            if fila_cama[0].upper() != 'LIBRE':
-                raise Exception(f"La cama {cama_nueva} de la habitación {hab_nueva} no está disponible (Estado actual: '{fila_cama[0]}').")
-
-            # 4. Insertar en POSEE:
-            # - El Trigger 'trg_ocupar_cama_posee' valida automáticamente que la nueva cama esté LIBRE y la pasa a 'OCUPADA'.
-            # - El Trigger 'trg_liberar_cama_cambio' pasa automáticamente la cama anterior a 'LIBRE'.
-            cursor.execute("""
-                INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
-                VALUES (:1, :2, :3, SYSTIMESTAMP)
-            """, [id_int, hab_nueva, cama_nueva])
-
-            # Fallback de compatibilidad: si la BD aún no tuviese compilado el trigger 'trg_ocupar_cama_posee'
-            cursor.execute("SELECT estado FROM CAMA WHERE id_habitacion = :1 AND nro_cama = :2", [hab_nueva, cama_nueva])
-            row_chk = cursor.fetchone()
-            if row_chk and row_chk[0].upper() == 'LIBRE':
-                cursor.execute("UPDATE CAMA SET estado = 'OCUPADA' WHERE id_habitacion = :1 AND nro_cama = :2", [hab_nueva, cama_nueva])
-
-            # Confirmar transacción completa
-            conn.commit()
+            # Ejecutar el Stored Procedure transaccional 'sp_ocupar_cama_posee'
+            # Valida internación activa, habitación válida y cama libre con bloqueo pesimista (FOR UPDATE).
+            # Libera la cama anterior (si tenía), ocupa la nueva, inserta en POSEE y ejecuta COMMIT atómicamente.
+            # Si algo falla, el procedure ejecuta ROLLBACK automático para que nada quede a mitad de hacer.
+            invocar_sp(cursor, "sp_ocupar_cama_posee", [id_int, hab_nueva, cama_nueva])
 
             msg_exito = (
-                f"Transacción confirmada (COMMIT):\n"
+                f"Transacción confirmada por Stored Procedure (COMMIT):\n"
                 f"• Paciente: {paciente_nombre}\n"
                 f"• Internación #{id_int} trasladado a Habitación {hab_nueva}, Cama {cama_nueva} (Estado: OCUPADA).\n"
             )
             if hab_anterior is not None:
-                msg_exito += f"• Cama anterior: Habitación {hab_anterior}, Cama {cama_anterior} liberada automáticamente por el Trigger 'trg_liberar_cama_cambio'."
+                msg_exito += f"• Cama anterior: Habitación {hab_anterior}, Cama {cama_anterior} liberada automáticamente a 'LIBRE'."
 
             self.log_exito(msg_exito)
             messagebox.showinfo("Traslado Exitoso", msg_exito)
@@ -1356,70 +1279,35 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            # 1. Validar existencia y estado de la internación
-            cursor.execute("""
-                SELECT i.id_internacion, i.fecha_inicio, i.fecha_fin, i.numero_de_DNI, p.nombre, p.apellido
-                FROM INTERNACION i
-                JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
-                WHERE i.id_internacion = :1
-            """, [id_int])
-            row_int = cursor.fetchone()
+            # 1. Consultar datos de internación mediante Stored Procedure 'sp_obtener_datos_alta'
+            cur_datos = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_obtener_datos_alta", [id_int, cur_datos])
+            row_int = cur_datos.fetchone()
+            cur_datos.close()
             if not row_int:
                 raise Exception(f"La internación #{id_int} no existe en la base de datos.")
-            if row_int[2] is not None:
-                raise Exception(f"La internación #{id_int} ya finalizó previamente (Alta médica otorgada el {row_int[2].strftime('%d/%m/%Y')}).")
+            if row_int[7] is not None:
+                raise Exception(f"La internación #{id_int} ya finalizó previamente (Alta médica otorgada el {row_int[7].strftime('%d/%m/%Y')}).")
 
-            paciente_nombre = f"{row_int[4]} {row_int[5]} (DNI {row_int[3]})"
-            fecha_inicio = row_int[1]
-
-            # 2. Consultar cama actual del paciente en POSEE
-            cursor.execute("""
-                SELECT id_habitacion, nro_cama
-                FROM POSEE
-                WHERE id_internacion = :1
-                ORDER BY fechaHora DESC
-                FETCH FIRST 1 ROW ONLY
-            """, [id_int])
-            row_cama = cursor.fetchone()
-            hab_act, cama_act = (row_cama[0], row_cama[1]) if row_cama else (None, None)
+            paciente_nombre = f"{row_int[1]} {row_int[2]} (DNI {row_int[3]})"
+            hab_act, cama_act = row_int[4], row_int[5]
             cama_info = f"Habitación {hab_act}, Cama {cama_act}" if hab_act is not None else "Sin cama asignada"
 
-            # 3. Cuadro de confirmación antes de proceder
+            # 2. Cuadro de confirmación antes de proceder
             confirmar = messagebox.askyesno(
                 "Confirmar Alta Médica",
                 f"¿Deseas dar el Alta Médica y finalizar la internación #{id_int}?\n\n"
                 f"• Paciente: {paciente_nombre}\n"
                 f"• Cama actual a liberar: {cama_info}\n\n"
-                f"Al confirmar, se actualizará la fecha de alta y el disparador 'trg_liberar_cama_fin_int' liberará la cama automáticamente."
+                f"Al confirmar, el Stored Procedure registrará la fecha de alta y liberará la cama automáticamente."
             )
             if not confirmar:
                 return
 
             self.log_info(f"Procesando alta médica para Internación #{id_int} ({paciente_nombre})...")
 
-            # 4. Actualizar fecha_fin en INTERNACION.
-            # En Oracle, el Trigger 'trg_liberar_cama_fin_int' se dispara:
-            # AFTER UPDATE OF fecha_fin ON INTERNACION WHEN (OLD.fecha_fin IS NULL AND NEW.fecha_fin IS NOT NULL)
-            # y ejecuta: UPDATE CAMA SET estado = 'LIBRE' WHERE id_habitacion = v_id_hab AND nro_cama = v_nro_cama;
-            cursor.execute("""
-                UPDATE INTERNACION
-                SET fecha_fin = GREATEST(TRUNC(SYSDATE), fecha_inicio)
-                WHERE id_internacion = :1 AND fecha_fin IS NULL
-            """, [id_int])
-
-            if cursor.rowcount == 0:
-                raise Exception(f"No se pudo actualizar la internación #{id_int}. Verifique si ya estaba finalizada.")
-
-            # Como resguardo si el trigger no estuviera activo en la base:
-            if hab_act is not None and cama_act is not None:
-                cursor.execute("""
-                    UPDATE CAMA
-                    SET estado = 'LIBRE'
-                    WHERE id_habitacion = :1 AND nro_cama = :2 AND estado != 'LIBRE'
-                """, [hab_act, cama_act])
-
-            # Confirmar la transacción
-            conn.commit()
+            # 3. Invocar Stored Procedure transaccional 'sp_dar_alta_internacion' en la base de datos
+            invocar_sp(cursor, "sp_dar_alta_internacion", [id_int])
 
             msg_exito = (
                 f"Transacción confirmada (COMMIT):\n"
@@ -1463,57 +1351,22 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            # Intentar invocar el Stored Procedure listar_camas_disponibles
-            usar_sp = False
-            try:
-                cur_res = cursor.connection.cursor()
-                cur_det = cursor.connection.cursor()
-                cursor.callproc("listar_camas_disponibles", [cur_res, cur_det])
-                
-                filas_resumen = cur_res.fetchall()
-                if hasattr(self, 'tabla_resumen_camas'):
-                    for r in filas_resumen:
-                        nom = r[1] if len(r) >= 2 else str(r[0])
-                        cant = r[2] if len(r) >= 3 else r[1]
-                        self.tabla_resumen_camas.insert("", tk.END, values=(nom, f"{cant} libre(s)"))
+            cur_res = cursor.connection.cursor()
+            cur_det = cursor.connection.cursor()
+            invocar_sp(cursor, "listar_camas_disponibles", [cur_res, cur_det])
+            
+            filas_resumen = cur_res.fetchall()
+            if hasattr(self, 'tabla_resumen_camas'):
+                for r in filas_resumen:
+                    self.tabla_resumen_camas.insert("", tk.END, values=(r[0], f"{r[1]} libre(s)"))
 
-                filas_detalle = cur_det.fetchall()
-                if hasattr(self, 'tabla_camas'):
-                    for f in filas_detalle:
-                        self.tabla_camas.insert("", tk.END, values=(f[0], f[1], "-", f[2], "LIBRE"))
+            filas_detalle = cur_det.fetchall()
+            if hasattr(self, 'tabla_camas'):
+                for f in filas_detalle:
+                    self.tabla_camas.insert("", tk.END, values=(f[0], f[1], f[2], f[3], f[4]))
 
-                cur_res.close()
-                cur_det.close()
-                usar_sp = True
-            except Exception:
-                usar_sp = False
-
-            # Si el SP no está compilado, usar consulta directa con soporte mayúsculas/minúsculas
-            if not usar_sp:
-                cursor.execute("""
-                    SELECT s.nombre AS sector, COUNT(c.nro_cama) AS disponibles
-                    FROM SECTOR s
-                    LEFT JOIN HABITACION h ON s.id_sector = h.id_sector
-                    LEFT JOIN CAMA c ON h.id_habitacion = c.id_habitacion AND UPPER(c.estado) = 'LIBRE'
-                    GROUP BY s.nombre
-                    ORDER BY s.nombre
-                """)
-                for r in cursor.fetchall():
-                    if hasattr(self, 'tabla_resumen_camas'):
-                        self.tabla_resumen_camas.insert("", tk.END, values=(r[0], f"{r[1]} libre(s)"))
-
-                cursor.execute("""
-                    SELECT s.nombre AS sector, h.id_habitacion, h.piso, c.nro_cama, c.estado
-                    FROM CAMA c
-                    JOIN HABITACION h ON c.id_habitacion = h.id_habitacion
-                    JOIN SECTOR s ON h.id_sector = s.id_sector
-                    WHERE UPPER(c.estado) = 'LIBRE'
-                    ORDER BY s.nombre, h.id_habitacion, c.nro_cama
-                """)
-                for f in cursor.fetchall():
-                    if hasattr(self, 'tabla_camas'):
-                        self.tabla_camas.insert("", tk.END, values=(f[0], f[1], f[2], f[3], f[4]))
-
+            cur_res.close()
+            cur_det.close()
             cursor.close()
         except Exception as e:
             traduccion = traducir_error_oracle(e)
@@ -1544,7 +1397,7 @@ class HospitalApp(tk.Tk):
 
             cur_pac = cursor.connection.cursor()
             cur_com = cursor.connection.cursor()
-            cursor.callproc("listar_comentarios_internacion", [id_int, cur_pac, cur_com])
+            invocar_sp(cursor, "listar_comentarios_internacion", [id_int, cur_pac, cur_com])
 
             paciente_info = cur_pac.fetchall()
             comentarios = cur_com.fetchall()
@@ -1566,8 +1419,8 @@ class HospitalApp(tk.Tk):
             else:
                 texto_resultado += f"VISITAS MÉDICAS REGISTRADAS ({len(comentarios)}):\n\n"
                 for c in comentarios:
-                    texto_resultado += f"📅 Fecha: {c[0]} | Médico: {c[1]} (Mat: {c[2]})\n"
-                    texto_resultado += f"💬 Comentario: \"{c[3]}\"\n"
+                    texto_resultado += f"📅 Fecha: {c[0]} | Turno: {c[1]} | Médico: {c[2]} (Mat: {c[3]})\n"
+                    texto_resultado += f"💬 Comentario: \"{c[4]}\"\n"
                     texto_resultado += "-" * 55 + "\n"
 
             self.log_exito(f"Stored Procedure 'listar_comentarios_internacion' ejecutado con éxito para Internación #{id_int}.")
@@ -1709,26 +1562,24 @@ class HospitalApp(tk.Tk):
             messagebox.showwarning("Atención", "Todos los campos de paciente son requeridos.")
             return
 
-        fmt = 'YYYY-MM-DD' if '-' in fnac else 'DD/MM/YYYY'
+        fnac_dt = None
+        for f_fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+            try:
+                fnac_dt = datetime.strptime(fnac, f_fmt).date()
+                break
+            except ValueError:
+                pass
+        if not fnac_dt:
+            messagebox.showerror("Error", "Formato de fecha de nacimiento inválido. Use DD/MM/AAAA o AAAA-MM-DD.")
+            return
 
         conn = None
         cursor = None
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            # 1. Insert en PERSONA
-            cursor.execute("""
-                INSERT INTO PERSONA (numero_de_DNI, nombre, apellido, rol)
-                VALUES (:1, :2, :3, 'PACIENTE')
-            """, [dni, nom, ape])
-
-            # 2. Insert en PACIENTE
-            cursor.execute(f"""
-                INSERT INTO PACIENTE (numero_de_DNI, sexo, fecha_de_nacimiento)
-                VALUES (:1, :2, TO_DATE(:3, '{fmt}'))
-            """, [dni, sex, fnac])
-
-            conn.commit()
+            # Invocar Stored Procedure transaccional 'sp_registrar_paciente'
+            invocar_sp(cursor, "sp_registrar_paciente", [dni, nom, ape, sex, fnac_dt])
             self.log_exito(f"Paciente DNI {dni} ({ape}, {nom}) registrado exitosamente.")
             messagebox.showinfo("Éxito", f"Paciente {nom} {ape} registrado correctamente.")
             self.pac_dni.delete(0, tk.END)
@@ -1753,14 +1604,11 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT p.numero_de_DNI, pr.apellido, pr.nombre, p.sexo, TO_CHAR(p.fecha_de_nacimiento, 'DD/MM/YYYY')
-                FROM PACIENTE p
-                JOIN PERSONA pr ON p.numero_de_DNI = pr.numero_de_DNI
-                ORDER BY pr.apellido, pr.nombre
-            """)
-            for row in cursor.fetchall():
+            cur_pac = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_listar_pacientes", [cur_pac])
+            for row in cur_pac.fetchall():
                 self.tabla_pacientes.insert("", tk.END, values=row)
+            cur_pac.close()
             cursor.close()
         except Exception as e:
             self.log_error(f"No se pudieron cargar los pacientes: {traducir_error_oracle(e, incluir_tecnico=True)}")
@@ -1870,8 +1718,11 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("SELECT foto FROM MEDICO WHERE numero_de_matricula = :1", [matricula])
-            res = cursor.fetchone()
+            cur_foto = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_obtener_foto_medico", [matricula, cur_foto])
+            res = cur_foto.fetchone()
+            cur_foto.close()
+            cursor.close()
             if not res or not res[0]:
                 messagebox.showinfo("Sin Foto", f"El médico Dr. {nombre_completo} no tiene una foto registrada.")
                 return
@@ -1916,28 +1767,18 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            # 1. Verificar o insertar PERSONA (rol NULL para no chocar con el trigger de guardias)
-            cursor.execute("SELECT numero_de_DNI FROM PERSONA WHERE numero_de_DNI = :1", [dni])
-            if not cursor.fetchone():
-                cursor.execute("""
-                    INSERT INTO PERSONA (numero_de_DNI, nombre, apellido, rol)
-                    VALUES (:1, :2, :3, NULL)
-                """, [dni, nom, ape])
-
             foto_bytes = None
             if self.med_ruta_foto and os.path.exists(self.med_ruta_foto):
                 with open(self.med_ruta_foto, "rb") as f:
                     foto_bytes = f.read()
 
-            # 2. Insertar en MEDICO con foto BLOB
-            cursor.execute("""
-                INSERT INTO MEDICO (numero_de_matricula, CUIL, foto, guardias_max, fecha_ingreso, numero_de_DNI)
-                VALUES (:1, :2, :3, :4, SYSDATE, :5)
-            """, [mat, cuil, foto_bytes, guardias, dni])
-
-            conn.commit()
-            texto_foto = "con foto adjunta" if foto_bytes else "sin foto"
-            self.log_exito(f"Médico Matrícula {mat} - Dr. {ape}, {nom} ({texto_foto}) registrado exitosamente.")
+            # Invocar Stored Procedure transaccional 'sp_registrar_medico' (foto opcional)
+            if foto_bytes:
+                invocar_sp(cursor, "sp_registrar_medico", [dni, nom, ape, mat, cuil, guardias, foto_bytes])
+            else:
+                invocar_sp(cursor, "sp_registrar_medico", [dni, nom, ape, mat, cuil, guardias])
+            
+            self.log_exito(f"Médico Matrícula {mat} - Dr. {ape}, {nom} registrado exitosamente.")
             messagebox.showinfo("Éxito", f"Médico Dr. {ape} registrado con éxito ({texto_foto}).")
             self.med_dni.delete(0, tk.END)
             self.med_nombre.delete(0, tk.END)
@@ -1966,15 +1807,11 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT m.numero_de_matricula, m.numero_de_DNI, pr.apellido, pr.nombre, m.CUIL, m.guardias_max,
-                       CASE WHEN m.foto IS NOT NULL THEN 'Sí' ELSE 'No' END AS tiene_foto
-                FROM MEDICO m
-                JOIN PERSONA pr ON m.numero_de_DNI = pr.numero_de_DNI
-                ORDER BY pr.apellido, pr.nombre
-            """)
-            for row in cursor.fetchall():
+            cur_med = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_listar_medicos", [cur_med])
+            for row in cur_med.fetchall():
                 self.tabla_medicos.insert("", tk.END, values=row)
+            cur_med.close()
             cursor.close()
         except Exception as e:
             self.log_error(f"No se pudieron cargar los médicos: {traducir_error_oracle(e, incluir_tecnico=True)}")
@@ -2049,13 +1886,8 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
             id_sec_var = cursor.var(oracledb.NUMBER)
-            cursor.execute("""
-                INSERT INTO SECTOR (nombre)
-                VALUES (:1)
-                RETURNING id_sector INTO :2
-            """, [nombre, id_sec_var])
-            conn.commit()
-            nuevo_id = int(id_sec_var.getvalue()[0])
+            invocar_sp(cursor, "sp_crear_sector", [nombre, id_sec_var])
+            nuevo_id = int(id_sec_var.getvalue())
             self.log_exito(f"Sector #{nuevo_id} '{nombre}' creado exitosamente en la base de datos.")
             messagebox.showinfo("Éxito", f"Sector '{nombre}' (ID #{nuevo_id}) creado correctamente.")
             self.actualizar_todos_los_sectores()
@@ -2078,8 +1910,10 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("SELECT id_sector, nombre FROM SECTOR ORDER BY id_sector")
-            sectores = cursor.fetchall()
+            cur_sec_combo = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_listar_sectores_combo", [cur_sec_combo])
+            sectores = cur_sec_combo.fetchall()
+            cur_sec_combo.close()
 
             valores_sectores = [f"{s[0]} - {s[1]}" for s in sectores]
             if hasattr(self, 'hab_sector_cb'):
@@ -2093,14 +1927,11 @@ class HospitalApp(tk.Tk):
             if hasattr(self, 'tabla_sectores'):
                 for item in self.tabla_sectores.get_children():
                     self.tabla_sectores.delete(item)
-                cursor.execute("""
-                    SELECT s.id_sector, s.nombre,
-                           (SELECT COUNT(*) FROM HABITACION h WHERE h.id_sector = s.id_sector) AS cant_habs
-                    FROM SECTOR s
-                    ORDER BY s.id_sector
-                """)
-                for row in cursor.fetchall():
+                cur_sec_tabla = cursor.connection.cursor()
+                invocar_sp(cursor, "sp_listar_sectores", [cur_sec_tabla])
+                for row in cur_sec_tabla.fetchall():
                     self.tabla_sectores.insert("", tk.END, values=(row[0], row[1], f"{row[2]} habitaciones"))
+                cur_sec_tabla.close()
 
             cursor.close()
         except Exception as e:
@@ -2200,22 +2031,11 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT r.dia_semana, r.turno, r.id_ronda
-                FROM COMPUESTA_POR cp
-                JOIN RONDA r ON cp.id_ronda = r.id_ronda
-                WHERE cp.id_habitacion = :1
-                ORDER BY CASE r.dia_semana 
-                    WHEN 'LUNES' THEN 1 
-                    WHEN 'MARTES' THEN 2 
-                    WHEN 'MIERCOLES' THEN 3 
-                    WHEN 'JUEVES' THEN 4 
-                    WHEN 'VIERNES' THEN 5 
-                    WHEN 'SABADO' THEN 6 
-                    WHEN 'DOMINGO' THEN 7 
-                    ELSE 8 END
-            """, [id_hab])
-            filas = cursor.fetchall()
+            cur_ron = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_obtener_rondas_habitacion", [id_hab, cur_ron])
+            filas = cur_ron.fetchall()
+            cur_ron.close()
+            cursor.close()
             if not filas:
                 messagebox.showinfo("Rondas", f"La habitación #{id_hab} no tiene rondas asignadas aún.")
                 return
@@ -2250,45 +2070,15 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            # 1. Insertar Habitación y obtener su ID
+            # Ejecutar Stored Procedure transaccional 'sp_crear_habitacion_con_rondas'
+            turnos = [int(self.cb_turnos_dias[dia_cod].get().replace("Turno", "").strip()) for dia_cod, _ in self.dias_semana]
             id_hab_var = cursor.var(oracledb.NUMBER)
-            cursor.execute("""
-                INSERT INTO HABITACION (piso, orientacion, id_sector)
-                VALUES (:1, :2, :3)
-                RETURNING id_habitacion INTO :4
-            """, [piso, ori, id_sector, id_hab_var])
-            nueva_hab = int(id_hab_var.getvalue()[0])
-
-            # 2. Asignar la ronda de cada uno de los 7 días
-            rondas_asignadas = []
-            for dia_cod, _ in self.dias_semana:
-                turno_sel = self.cb_turnos_dias[dia_cod].get()
-                nro_turno = turno_sel.replace("Turno", "").strip()
-
-                cursor.execute("""
-                    SELECT id_ronda FROM RONDA 
-                    WHERE dia_semana = :1 AND turno = :2
-                """, [dia_cod, nro_turno])
-                fila_ronda = cursor.fetchone()
-
-                if fila_ronda:
-                    id_ronda = fila_ronda[0]
-                else:
-                    id_ronda_var = cursor.var(oracledb.NUMBER)
-                    cursor.execute("""
-                        INSERT INTO RONDA (dia_semana, turno)
-                        VALUES (:1, :2)
-                        RETURNING id_ronda INTO :3
-                    """, [dia_cod, nro_turno, id_ronda_var])
-                    id_ronda = int(id_ronda_var.getvalue()[0])
-
-                cursor.execute("""
-                    INSERT INTO COMPUESTA_POR (id_ronda, id_habitacion)
-                    VALUES (:1, :2)
-                """, [id_ronda, nueva_hab])
-                rondas_asignadas.append(f"{dia_cod}: Turno {nro_turno}")
-
-            conn.commit()
+            invocar_sp(cursor, "sp_crear_habitacion_con_rondas", [
+                str(piso), ori, int(id_sector),
+                turnos[0], turnos[1], turnos[2], turnos[3], turnos[4], turnos[5], turnos[6],
+                id_hab_var
+            ])
+            nueva_hab = int(id_hab_var.getvalue())
             msg_exito = f"Habitación #{nueva_hab} creada y asociada a las rondas de los 7 días con éxito (COMMIT)."
             self.log_exito(msg_exito)
             messagebox.showinfo("Éxito", msg_exito)
@@ -2313,17 +2103,12 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-
-            cursor.execute("""
-                SELECT h.id_habitacion, h.piso, h.orientacion, s.nombre,
-                       (SELECT COUNT(*) FROM COMPUESTA_POR cp WHERE cp.id_habitacion = h.id_habitacion) AS cant_rondas
-                FROM HABITACION h
-                JOIN SECTOR s ON h.id_sector = s.id_sector
-                ORDER BY h.id_habitacion
-            """)
-            for row in cursor.fetchall():
+            cur_hab = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_listar_habitaciones", [cur_hab])
+            for row in cur_hab.fetchall():
                 cant_texto = f"{row[4]} días asignados" if row[4] > 0 else "Sin rondas"
                 self.tabla_habitaciones.insert("", tk.END, values=(row[0], row[1], row[2], row[3], cant_texto))
+            cur_hab.close()
             cursor.close()
         except Exception as e:
             self.log_error(f"No se pudieron cargar habitaciones: {traducir_error_oracle(e, incluir_tecnico=True)}")
@@ -2394,11 +2179,7 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO CAMA (id_habitacion, nro_cama, estado)
-                VALUES (:1, :2, :3)
-            """, [id_hab, nro_cama, estado])
-            conn.commit()
+            invocar_sp(cursor, "sp_crear_cama", [id_hab, nro_cama, estado])
             self.log_exito(f"Cama {nro_cama} creada en Habitación #{id_hab} con estado '{estado}'.")
             messagebox.showinfo("Éxito", f"Cama {nro_cama} creada con éxito.")
             self.cargar_todas_las_camas()
@@ -2420,15 +2201,11 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT c.id_habitacion, c.nro_cama, c.estado, s.nombre
-                FROM CAMA c
-                JOIN HABITACION h ON c.id_habitacion = h.id_habitacion
-                JOIN SECTOR s ON h.id_sector = s.id_sector
-                ORDER BY c.id_habitacion, c.nro_cama
-            """)
-            for row in cursor.fetchall():
+            cur_cam = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_listar_todas_camas", [cur_cam])
+            for row in cur_cam.fetchall():
                 self.tabla_todas_camas.insert("", tk.END, values=row)
+            cur_cam.close()
             cursor.close()
         except Exception as e:
             self.log_error(f"No se pudieron cargar las camas: {traducir_error_oracle(e, incluir_tecnico=True)}")
@@ -2779,13 +2556,11 @@ class HospitalApp(tk.Tk):
         return valor.split(" - ", 1)[0].strip()
 
     def _obtener_opciones_medicos(self, cursor):
-        cursor.execute("""
-            SELECT m.numero_de_matricula, p.apellido, p.nombre
-            FROM MEDICO m
-            JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
-            ORDER BY p.apellido, p.nombre
-        """)
-        return [f"{m[0]} - {m[1]}, {m[2]}" for m in cursor.fetchall()]
+        cur_med = cursor.connection.cursor()
+        invocar_sp(cursor, "sp_listar_medicos_combo", [cur_med])
+        opciones = [f"{m[0]} - {m[1]}, {m[2]}" for m in cur_med.fetchall()]
+        cur_med.close()
+        return opciones
 
     def _cargar_especialidades_para_combo(self, cb_medico, cb_esp, lbl_info=None, cursor=None):
         """Carga especialidades ordenadas por disponibilidad para el médico del combo."""
@@ -2804,22 +2579,13 @@ class HospitalApp(tk.Tk):
                 conn_propia = self.obtener_conexion_guardias_o_default()
                 cursor_local = conn_propia.cursor()
 
-            cursor_local.execute("""
-                SELECT e.id_especialidad, e.nombre, t.dispuesto
-                FROM ESPECIALIDAD e
-                LEFT JOIN TIENE t
-                       ON e.id_especialidad = t.id_especialidad
-                      AND t.numero_de_matricula = :1
-                ORDER BY CASE
-                             WHEN UPPER(t.dispuesto) = 'SI' THEN 0
-                             WHEN UPPER(t.dispuesto) = 'NO' THEN 1
-                             ELSE 2
-                         END,
-                         e.nombre
-            """, [matricula])
+            cur_esp = cursor_local.connection.cursor()
+            invocar_sp(cursor_local, "sp_listar_especialidades_medico", [matricula, cur_esp])
+            filas_esp = cur_esp.fetchall()
+            cur_esp.close()
 
             opciones_esp = []
-            for id_esp, nombre, dispuesto in cursor_local.fetchall():
+            for id_esp, nombre, dispuesto in filas_esp:
                 estado = f"Disp: {dispuesto}" if dispuesto is not None else "No reg."
                 opciones_esp.append(f"{id_esp} - {nombre} ({estado})")
 
@@ -2853,6 +2619,36 @@ class HospitalApp(tk.Tk):
             lbl_info.config(text="⚠️ Figura NO dispuesto en TIENE para esta especialidad.", foreground="#C53030")
         else:
             lbl_info.config(text="⚠️ Especialidad sin registrar en TIENE para este médico.", foreground="#C53030")
+
+    def _verificar_medico_tiene_especialidad(self, matricula, id_especialidad):
+        """
+        Verifica en la base de datos si el médico tiene registrada la especialidad en la tabla TIENE
+        y si está dispuesto ('SI') a realizar guardias en ella.
+        Retorna (valido: bool, motivo: str).
+        Motivo puede ser 'ok', 'no_registrada' o 'no_dispuesto'.
+        """
+        conn = None
+        cur = None
+        try:
+            conn = self.obtener_conexion_guardias_o_default()
+            cur = conn.cursor()
+            p_res = cur.var(oracledb.DB_TYPE_VARCHAR)
+            invocar_sp(cur, "sp_verificar_medico_especialidad", [matricula, id_especialidad, p_res])
+            resultado = (p_res.getvalue() or "").strip().lower()
+            if resultado == "ok":
+                return True, "ok"
+            elif resultado == "no_dispuesto":
+                return False, "no_dispuesto"
+            else:
+                return False, "no_registrada"
+        except Exception as e:
+            self.log_error(f"Error al verificar especialidad del médico: {e}")
+            return False, "error_db"
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
 
     def refrescar_panel_guardias(self):
         """Actualiza la tabla de guardias y los selectores de médicos/especialidades."""
@@ -2921,7 +2717,35 @@ class HospitalApp(tk.Tk):
             conn.close()
             return
 
-        fmt = 'YYYY-MM-DD' if '-' in fecha_str else 'DD/MM/YYYY'
+        fecha_dt = None
+        for f_fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+            try:
+                fecha_dt = datetime.strptime(fecha_str, f_fmt).date()
+                break
+            except ValueError:
+                pass
+        if not fecha_dt:
+            messagebox.showerror("Error", "Formato de fecha inválido. Use DD/MM/AAAA o AAAA-MM-DD.")
+            conn.close()
+            return
+
+        # Verificar que el médico tenga la especialidad registrada en TIENE y esté dispuesto
+        valido, motivo = self._verificar_medico_tiene_especialidad(matricula, id_especialidad)
+        if not valido:
+            conn.close()
+            if motivo == "no_registrada":
+                messagebox.showerror(
+                    "Especialidad No Registrada",
+                    f"❌ REGLA DE NEGOCIO VIOLADA:\n\n"
+                    f"El médico {med_sel} no tiene registrada esa especialidad en la tabla TIENE."
+                )
+            else:
+                messagebox.showerror(
+                    "Médico No Dispuesto",
+                    f"❌ REGLA DE NEGOCIO VIOLADA:\n\n"
+                    f"El médico {med_sel} figura como NO DISPUESTO a realizar guardias para esa especialidad."
+                )
+            return
 
         cursor = None
         nuevo_id = None
@@ -2929,37 +2753,10 @@ class HospitalApp(tk.Tk):
             cursor = conn.cursor()
             id_guardia_var = cursor.var(oracledb.NUMBER)
 
-            cursor.execute(f"""
-                INSERT INTO GUARDIA (turno, fecha)
-                VALUES (:1, TO_DATE(:2, '{fmt}'))
-                RETURNING id_guardia INTO :3
-            """, [turno, fecha_str, id_guardia_var])
-            nuevo_id = int(id_guardia_var.getvalue()[0])
-
-            # Confirmar la cabecera de la guardia en la BD para que los disparadores
-            # (incluso si tienen PRAGMA AUTONOMOUS_TRANSACTION) puedan leerla sin fallar con ORA-01403.
-            conn.commit()
-
-            try:
-                cursor.execute("""
-                    INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia)
-                    VALUES (:1, :2, :3)
-                """, [matricula, id_especialidad, nuevo_id])
-                conn.commit()
-            except Exception as e_cp:
-                # Si la asignación falla (por ejemplo por regla de guardia superpuesta, límite mensual o médico no dispuesto),
-                # eliminamos la guardia recién creada para evitar dejar una guardia huérfana sin médicos asignados.
-                try:
-                    conn_clean = self.obtener_conexion_guardias()
-                    if conn_clean:
-                        cur_clean = conn_clean.cursor()
-                        cur_clean.execute("DELETE FROM GUARDIA WHERE id_guardia = :1", [nuevo_id])
-                        conn_clean.commit()
-                        cur_clean.close()
-                        conn_clean.close()
-                except Exception:
-                    pass
-                raise e_cp
+            invocar_sp(cursor, "sp_crear_y_asignar_guardia", [
+                turno, fecha_dt, matricula, id_especialidad, id_guardia_var
+            ])
+            nuevo_id = int(id_guardia_var.getvalue())
 
             msg = f"Guardia #{nuevo_id} ({turno} del {fecha_str}) creada y asignada a '{med_sel}' por usuario '{self.usuario_guardias.upper()}'."
             self.log_exito(msg)
@@ -2989,25 +2786,11 @@ class HospitalApp(tk.Tk):
         try:
             conn = self.obtener_conexion_guardias_o_default()
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT g.id_guardia,
-                       TO_CHAR(g.fecha, 'DD/MM/YYYY'),
-                       g.turno,
-                       COALESCE(
-                           (SELECT LISTAGG(p.apellido || ' (' || cp.numero_de_matricula || ' - ' || e.nombre || ')', ', ')
-                                   WITHIN GROUP (ORDER BY p.apellido, e.nombre)
-                            FROM CUBIERTA_POR cp
-                            JOIN MEDICO m ON cp.numero_de_matricula = m.numero_de_matricula
-                            JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
-                            JOIN ESPECIALIDAD e ON cp.id_especialidad = e.id_especialidad
-                            WHERE cp.id_guardia = g.id_guardia),
-                           'Sin asignar'
-                       ) AS medicos_asignados
-                FROM GUARDIA g
-                ORDER BY g.fecha DESC, g.id_guardia DESC
-            """)
-            for row in cursor.fetchall():
+            cur_grd = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_listar_guardias", [cur_grd])
+            for row in cur_grd.fetchall():
                 self.tabla_guardias.insert("", tk.END, values=row)
+            cur_grd.close()
             cursor.close()
         except Exception as e:
             self.log_error(f"No se pudieron cargar las guardias: {traducir_error_oracle(e, incluir_tecnico=True)}")
@@ -3041,29 +2824,20 @@ class HospitalApp(tk.Tk):
         cursor = None
         try:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT TO_CHAR(fecha, 'DD/MM/YYYY'), turno
-                FROM GUARDIA
-                WHERE id_guardia = :1
-            """, [id_guardia])
-            row_g = cursor.fetchone()
+            cur_g = cursor.connection.cursor()
+            cur_m = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_obtener_datos_guardia", [id_guardia, cur_g, cur_m])
+            row_g = cur_g.fetchone()
+            asignaciones_actuales = cur_m.fetchall()
+            cur_g.close()
+            cur_m.close()
             if not row_g:
+                cursor.close()
                 messagebox.showerror("No Encontrada", f"La guardia #{id_guardia} ya no existe en la base de datos.")
                 self.refrescar_panel_guardias()
                 return
 
             fecha_actual, turno_actual = row_g
-
-            cursor.execute("""
-                SELECT cp.numero_de_matricula, p.apellido, p.nombre, cp.id_especialidad, e.nombre
-                FROM CUBIERTA_POR cp
-                JOIN MEDICO m ON cp.numero_de_matricula = m.numero_de_matricula
-                JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
-                JOIN ESPECIALIDAD e ON cp.id_especialidad = e.id_especialidad
-                WHERE cp.id_guardia = :1
-                ORDER BY p.apellido, e.nombre
-            """, [id_guardia])
-            asignaciones_actuales = cursor.fetchall()
             opciones_medicos = self._obtener_opciones_medicos(cursor)
         except Exception as e:
             self.reportar_error("Error", e, prefijo_log=f"Error al cargar guardia #{id_guardia}")
@@ -3127,6 +2901,8 @@ class HospitalApp(tk.Tk):
                 tree_asig.insert("", tk.END, iid=str(idx), values=(item["mat"], item["med_txt"], item["esp_txt"]))
 
         refrescar_tree_asig()
+        if asignaciones:
+            tree_asig.selection_set("0")
 
         ttk.Label(frame_meds, text="Médico:").grid(row=1, column=0, sticky="w", pady=3)
         cb_mod_med = ttk.Combobox(frame_meds, values=opciones_medicos, state="readonly", width=38)
@@ -3166,16 +2942,34 @@ class HospitalApp(tk.Tk):
             nuevo = obtener_par_seleccionado()
             if not nuevo:
                 return
+
+            # Verificar que el médico tenga la especialidad registrada en TIENE y esté dispuesto
+            valido, motivo = self._verificar_medico_tiene_especialidad(nuevo["mat"], nuevo["id_esp"])
+            if not valido:
+                if motivo == "no_registrada":
+                    msg_error = (
+                        f"❌ REGLA DE NEGOCIO VIOLADA:\n\n"
+                        f"El médico {nuevo['med_txt']} no tiene registrada la especialidad '{nuevo['esp_txt']}' en la tabla TIENE."
+                    )
+                elif motivo == "no_dispuesto":
+                    msg_error = (
+                        f"❌ REGLA DE NEGOCIO VIOLADA:\n\n"
+                        f"El médico {nuevo['med_txt']} figura como NO DISPUESTO a realizar guardias para la especialidad '{nuevo['esp_txt']}'."
+                    )
+                else:
+                    msg_error = "Ocurrió un error al verificar la especialidad del médico en la base de datos."
+
+                messagebox.showerror("Especialidad No Permitida", msg_error, parent=modal)
+                return
+
             if any(a["mat"] == nuevo["mat"] and a["id_esp"] == nuevo["id_esp"] for a in asignaciones):
                 messagebox.showinfo("Ya Asignado", "Ese médico ya está asignado a la guardia con esa especialidad.", parent=modal)
                 return
             asignaciones.append(nuevo)
             refrescar_tree_asig()
+            tree_asig.selection_set(str(len(asignaciones) - 1))
 
         def reemplazar_medico_lista():
-            nuevo = obtener_par_seleccionado()
-            if not nuevo:
-                return
             sel = tree_asig.selection()
             if not sel:
                 if len(asignaciones) == 1:
@@ -3186,14 +2980,61 @@ class HospitalApp(tk.Tk):
             else:
                 idx = int(sel[0])
 
-            if any(
-                i != idx and a["mat"] == nuevo["mat"] and a["id_esp"] == nuevo["id_esp"]
-                for i, a in enumerate(asignaciones)
-            ):
-                messagebox.showinfo("Duplicado", "Ese médico ya figura en otra fila con la misma especialidad.", parent=modal)
+            med_anterior = asignaciones[idx]
+            mat_anterior = med_anterior["mat"]
+            id_esp_anterior = med_anterior["id_esp"]
+            med_txt_anterior = med_anterior["med_txt"]
+            esp_txt_anterior = med_anterior["esp_txt"]
+
+            nuevo = obtener_par_seleccionado()
+            if not nuevo:
                 return
+
+            mat_nueva = nuevo["mat"]
+            med_txt_nueva = nuevo["med_txt"]
+            id_esp_nueva = nuevo["id_esp"]
+            esp_txt_nueva = nuevo["esp_txt"]
+
+            if mat_nueva == mat_anterior and id_esp_nueva == id_esp_anterior:
+                messagebox.showinfo("Mismo Médico y Especialidad", "Has seleccionado al mismo médico y especialidad que ya están asignados.", parent=modal)
+                return
+
+            # Regla de negocio: El médico no puede reemplazar al seleccionado si no tiene esa especialidad registrada (y dispuesta) en TIENE
+            valido, motivo = self._verificar_medico_tiene_especialidad(mat_nueva, id_esp_nueva)
+            if not valido:
+                if motivo == "no_registrada":
+                    msg_error = (
+                        f"❌ REGLA DE NEGOCIO VIOLADA:\n\n"
+                        f"El médico {med_txt_nueva} no tiene registrada la especialidad '{esp_txt_nueva}' en el sistema (tabla TIENE).\n\n"
+                        f"No se puede realizar el reemplazo. Se mantiene el médico que estaba anteriormente:\n"
+                        f"• {med_txt_anterior} ({esp_txt_anterior})"
+                    )
+                elif motivo == "no_dispuesto":
+                    msg_error = (
+                        f"❌ REGLA DE NEGOCIO VIOLADA:\n\n"
+                        f"El médico {med_txt_nueva} figura como NO DISPUESTO a realizar guardias para la especialidad '{esp_txt_nueva}'.\n\n"
+                        f"No se puede realizar el reemplazo. Se mantiene el médico que estaba anteriormente:\n"
+                        f"• {med_txt_anterior} ({esp_txt_anterior})"
+                    )
+                else:
+                    msg_error = "Ocurrió un error al verificar la especialidad del médico en la base de datos."
+
+                messagebox.showerror("Reemplazo No Permitido", msg_error, parent=modal)
+                # Debe quedar el médico que estaba anteriormente: no modificamos asignaciones[idx]
+                refrescar_tree_asig()
+                tree_asig.selection_set(str(idx))
+                return
+
+            # Verificar que no quede duplicado en otra fila de la guardia
+            if any(i != idx and a["mat"] == mat_nueva and a["id_esp"] == id_esp_nueva for i, a in enumerate(asignaciones)):
+                messagebox.showinfo("Duplicado", f"El médico {med_txt_nueva} ya figura asignado a esta guardia en la especialidad '{esp_txt_nueva}'.", parent=modal)
+                return
+
+            # Reemplazar al médico (puede ser con la misma especialidad o con cualquier especialidad que el médico tenga dispuesta)
             asignaciones[idx] = nuevo
             refrescar_tree_asig()
+            tree_asig.selection_set(str(idx))
+            self.log_evento(f"Médico reemplazado en guardia: '{med_txt_anterior}' ({esp_txt_anterior}) por '{med_txt_nueva}' ({esp_txt_nueva}).")
 
         def quitar_medico_lista():
             if len(asignaciones) <= 1:
@@ -3242,7 +3083,17 @@ class HospitalApp(tk.Tk):
             if not conn_save:
                 return
 
-            fmt = 'YYYY-MM-DD' if '-' in fecha_nueva else 'DD/MM/YYYY'
+            fecha_dt = None
+            for f_fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+                try:
+                    fecha_dt = datetime.strptime(fecha_nueva, f_fmt).date()
+                    break
+                except ValueError:
+                    pass
+            if not fecha_dt:
+                messagebox.showerror("Error", "Formato de fecha inválido. Use DD/MM/AAAA o AAAA-MM-DD.", parent=modal)
+                return
+
             nuevo_set = {(a["mat"], a["id_esp"]) for a in asignaciones}
             a_eliminar = asignaciones_originales - nuevo_set
             a_insertar = nuevo_set - asignaciones_originales
@@ -3251,29 +3102,40 @@ class HospitalApp(tk.Tk):
             try:
                 cur_save = conn_save.cursor()
 
-                cur_save.execute(f"""
-                    UPDATE GUARDIA
-                    SET fecha = TO_DATE(:1, '{fmt}'), turno = :2
-                    WHERE id_guardia = :3
-                """, [fecha_nueva, turno_nuevo, id_guardia])
+                # Actualizar fecha y turno de la guardia solo si cambiaron
+                fecha_actual_dt = None
+                for f_fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+                    try:
+                        fecha_actual_dt = datetime.strptime(fecha_actual.strip(), f_fmt).date()
+                        break
+                    except ValueError:
+                        pass
 
-                for mat_del, esp_del in a_eliminar:
-                    cur_save.execute("""
-                        DELETE FROM CUBIERTA_POR
-                        WHERE id_guardia = :1 AND numero_de_matricula = :2 AND id_especialidad = :3
-                    """, [id_guardia, mat_del, esp_del])
+                cambio_fecha_turno = (fecha_dt != fecha_actual_dt) or (turno_nuevo != turno_actual.strip().upper())
+                if cambio_fecha_turno:
+                    invocar_sp(cur_save, "sp_actualizar_guardia", [id_guardia, fecha_dt, turno_nuevo])
 
-                for mat_ins, esp_ins in a_insertar:
-                    cur_save.execute("""
-                        INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia)
-                        VALUES (:1, :2, :3)
-                    """, [mat_ins, esp_ins, id_guardia])
+                # Modificar asignaciones de médicos mediante Stored Procedures
+                list_del = sorted(list(a_eliminar))
+                list_ins = sorted(list(a_insertar))
+                min_len = min(len(list_del), len(list_ins))
 
-                cur_save.execute("SELECT COUNT(*) FROM CUBIERTA_POR WHERE id_guardia = :1", [id_guardia])
-                if cur_save.fetchone()[0] < 1:
-                    raise Exception("Una guardia no puede quedar sin médicos asignados.")
+                # Reemplazos directos 1 a 1 (UPDATE en BD) para que la guardia nunca quede transitoriamente con 0 médicos
+                for i in range(min_len):
+                    mat_del, esp_del = list_del[i]
+                    mat_ins, esp_ins = list_ins[i]
+                    invocar_sp(cur_save, "sp_reemplazar_medico_guardia", [id_guardia, mat_del, esp_del, mat_ins, esp_ins])
 
-                conn_save.commit()
+                # Asignar nuevos médicos excedentes (si se sumaron más de los que se quitaron)
+                for i in range(min_len, len(list_ins)):
+                    mat_ins, esp_ins = list_ins[i]
+                    invocar_sp(cur_save, "sp_asignar_medico_guardia", [id_guardia, mat_ins, esp_ins])
+
+                # Desasignar médicos eliminados excedentes (si se redujo la cantidad pero queda al menos uno)
+                for i in range(min_len, len(list_del)):
+                    mat_del, esp_del = list_del[i]
+                    invocar_sp(cur_save, "sp_desasignar_medico_guardia", [id_guardia, mat_del, esp_del])
+
                 msg = f"Guardia #{id_guardia} modificada con éxito ({turno_nuevo} del {fecha_nueva}) por usuario '{self.usuario_guardias.upper()}'."
                 self.log_exito(msg)
                 messagebox.showinfo("Modificación Exitosa", msg, parent=modal)
@@ -3349,10 +3211,7 @@ class HospitalApp(tk.Tk):
         cursor = None
         try:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM GUARDIA WHERE id_guardia = :1", [id_guardia])
-            if cursor.rowcount == 0:
-                raise Exception(f"No se encontró la guardia #{id_guardia} en la base de datos.")
-            conn.commit()
+            invocar_sp(cursor, "sp_eliminar_guardia", [id_guardia])
 
             msg = f"Guardia #{id_guardia} ({turno} del {fecha}) eliminada correctamente por usuario '{self.usuario_guardias.upper()}'."
             self.log_exito(msg)
@@ -3372,21 +3231,18 @@ class HospitalApp(tk.Tk):
     # MÉTODOS AUXILIARES: RECORRIDOS Y RONDAS
     # --------------------------------------------------------------------------
     def _obtener_opciones_medicos(self, cursor):
-        cursor.execute("""
-            SELECT m.numero_de_matricula, p.apellido, p.nombre
-            FROM MEDICO m
-            JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
-            ORDER BY p.apellido, p.nombre
-        """)
-        return [f"{m[0]} - {m[1]}, {m[2]}" for m in cursor.fetchall()]
+        cur_med = cursor.connection.cursor()
+        invocar_sp(cursor, "sp_listar_medicos_combo", [cur_med])
+        opciones = [f"{m[0]} - {m[1]}, {m[2]}" for m in cur_med.fetchall()]
+        cur_med.close()
+        return opciones
 
     def _obtener_opciones_rondas(self, cursor):
-        cursor.execute("""
-            SELECT id_ronda, turno, dia_semana
-            FROM RONDA
-            ORDER BY id_ronda
-        """)
-        return [f"Ronda #{r[0]} | {r[2]} (Turno {r[1]})" for r in cursor.fetchall()]
+        cur_ron = cursor.connection.cursor()
+        invocar_sp(cursor, "sp_listar_rondas_combo", [cur_ron])
+        filas = cur_ron.fetchall()
+        cur_ron.close()
+        return [f"Ronda #{r[0]} | {r[2]} (Turno {r[1]})" for r in filas]
 
     def _parsear_fecha_recorrido(self, fecha_str):
         for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
@@ -3523,14 +3379,8 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
             id_rec_var = cursor.var(oracledb.NUMBER)
-            cursor.execute("""
-                INSERT INTO RECORRIDO (fecha, id_ronda, numero_de_matricula)
-                VALUES (:1, :2, :3)
-                RETURNING id_recorrido INTO :4
-            """, [fecha_dt, id_ronda, matricula, id_rec_var])
-
-            nuevo_id = int(id_rec_var.getvalue()[0])
-            conn.commit()
+            invocar_sp(cursor, "sp_registrar_recorrido", [fecha_dt, id_ronda, matricula, id_rec_var])
+            nuevo_id = int(id_rec_var.getvalue())
 
             msg = f"Recorrido #{nuevo_id} registrado con éxito para el Dr./Dra. {med_sel} en Ronda #{id_ronda} ({fecha_str})."
             self.log_exito(msg)
@@ -3563,23 +3413,11 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT r.id_recorrido,
-                       TO_CHAR(r.fecha, 'DD/MM/YYYY HH24:MI') as fecha_fmt,
-                       r.numero_de_matricula,
-                       p.apellido || ', ' || p.nombre as medico,
-                       r.id_ronda,
-                       COALESCE(TO_CHAR(ro.turno), 'N/A') as turno,
-                       COALESCE(ro.dia_semana, 'N/A') as dia,
-                       (SELECT COUNT(*) FROM COMENTARIO c WHERE c.id_recorrido = r.id_recorrido) as cant_com
-                FROM RECORRIDO r
-                JOIN MEDICO m ON r.numero_de_matricula = m.numero_de_matricula
-                JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
-                LEFT JOIN RONDA ro ON r.id_ronda = ro.id_ronda
-                ORDER BY r.fecha DESC, r.id_recorrido DESC
-            """)
-            for row in cursor.fetchall():
+            cur_rec = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_listar_recorridos", [cur_rec])
+            for row in cur_rec.fetchall():
                 self.tabla_recorridos.insert("", tk.END, values=row)
+            cur_rec.close()
             cursor.close()
         except Exception as e:
             self.log_error(f"Error al cargar listado de recorridos: {e}")
@@ -3640,8 +3478,7 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM RECORRIDO WHERE id_recorrido = :1", [id_rec])
-            conn.commit()
+            invocar_sp(cursor, "sp_eliminar_recorrido", [id_rec])
             self.log_exito(f"Recorrido #{id_rec} eliminado exitosamente.")
             messagebox.showinfo("Éxito", f"Recorrido #{id_rec} eliminado correctamente.")
             self.cargar_lista_recorridos()
@@ -3817,19 +3654,10 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT r.id_recorrido,
-                       TO_CHAR(r.fecha, 'DD/MM/YYYY HH24:MI') as fecha_fmt,
-                       r.id_ronda,
-                       COALESCE(ro.dia_semana, 'N/A') as dia,
-                       COALESCE(TO_CHAR(ro.turno), 'N/A') as turno,
-                       (SELECT COUNT(*) FROM COMENTARIO c WHERE c.id_recorrido = r.id_recorrido) as cant_com
-                FROM RECORRIDO r
-                LEFT JOIN RONDA ro ON r.id_ronda = ro.id_ronda
-                WHERE r.numero_de_matricula = :1
-                ORDER BY r.fecha DESC, r.id_recorrido DESC
-            """, [matricula])
-            recorridos = cursor.fetchall()
+            cur_rec_med = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_listar_recorridos_medico", [matricula, cur_rec_med])
+            recorridos = cur_rec_med.fetchall()
+            cur_rec_med.close()
             cursor.close()
 
             opciones_combo = []
@@ -3901,20 +3729,11 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT c.id_comentario,
-                       c.id_internacion,
-                       p.apellido || ', ' || p.nombre AS paciente,
-                       c.contenido
-                FROM COMENTARIO c
-                JOIN INTERNACION i ON c.id_internacion = i.id_internacion
-                JOIN PACIENTE pac ON i.numero_de_DNI = pac.numero_de_DNI
-                JOIN PERSONA p ON pac.numero_de_DNI = p.numero_de_DNI
-                WHERE c.id_recorrido = :1
-                ORDER BY c.id_comentario DESC
-            """, [id_recorrido])
-            for row in cursor.fetchall():
+            cur_com = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_listar_comentarios_recorrido", [id_recorrido, cur_com])
+            for row in cur_com.fetchall():
                 self.com_tabla_comentarios.insert("", tk.END, values=row)
+            cur_com.close()
             cursor.close()
         except Exception as e:
             self.log_error(f"Error al cargar comentarios del recorrido #{id_recorrido}: {e}")
@@ -3935,65 +3754,25 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            # 1. Obtener la ronda del recorrido
-            cursor.execute("""
-                SELECT r.id_ronda, ro.dia_semana, ro.turno
-                FROM RECORRIDO r
-                LEFT JOIN RONDA ro ON r.id_ronda = ro.id_ronda
-                WHERE r.id_recorrido = :1
-            """, [id_recorrido])
-            row_rec = cursor.fetchone()
+            # Consultar internaciones y datos de la ronda mediante Stored Procedure
+            cur_ronda = cursor.connection.cursor()
+            cur_ints = cursor.connection.cursor()
+            invocar_sp(cursor, "sp_internaciones_de_recorrido", [id_recorrido, cur_ronda, cur_ints])
+            row_rec = cur_ronda.fetchone()
             if not row_rec:
+                cur_ronda.close()
+                cur_ints.close()
+                cursor.close()
                 return
 
             id_ronda = row_rec[0]
             dia_ronda = row_rec[1] or "N/A"
             turno_ronda = row_rec[2] or "N/A"
+            habs_str = f"Habitaciones de Ronda #{id_ronda}"
 
-            # 2. Obtener lista de habitaciones que componen esta ronda
-            cursor.execute("""
-                SELECT cp.id_habitacion
-                FROM COMPUESTA_POR cp
-                WHERE cp.id_ronda = :1
-                ORDER BY cp.id_habitacion
-            """, [id_ronda])
-            habs_ronda = [r[0] for r in cursor.fetchall()]
-            habs_str = ", ".join(f"Hab #{h}" for h in habs_ronda) if habs_ronda else "Ninguna"
-
-            # 3. Consultar internaciones activas cuyas habitaciones actuales pertenezcan a esta ronda
-            cursor.execute("""
-                SELECT i.id_internacion,
-                       p.nombre,
-                       p.apellido,
-                       i.numero_de_DNI,
-                       pos.id_habitacion,
-                       pos.nro_cama,
-                       COALESCE(s.nombre, 'General') as sector,
-                       TO_CHAR(i.fecha_inicio, 'DD/MM/YYYY HH24:MI') as inicio_fmt
-                FROM INTERNACION i
-                JOIN PACIENTE pac ON i.numero_de_DNI = pac.numero_de_DNI
-                JOIN PERSONA p ON pac.numero_de_DNI = p.numero_de_DNI
-                JOIN (
-                    SELECT p1.id_internacion, p1.id_habitacion, p1.nro_cama
-                    FROM POSEE p1
-                    WHERE p1.fechaHora = (
-                        SELECT MAX(p2.fechaHora)
-                        FROM POSEE p2
-                        WHERE p2.id_internacion = p1.id_internacion
-                    )
-                ) pos ON pos.id_internacion = i.id_internacion
-                JOIN HABITACION h ON pos.id_habitacion = h.id_habitacion
-                LEFT JOIN SECTOR s ON h.id_sector = s.id_sector
-                WHERE i.fecha_fin IS NULL
-                  AND pos.id_habitacion IN (
-                      SELECT cp2.id_habitacion
-                      FROM COMPUESTA_POR cp2
-                      WHERE cp2.id_ronda = :1
-                  )
-                ORDER BY i.id_internacion DESC
-            """, [id_ronda])
-
-            filas_int = cursor.fetchall()
+            filas_int = cur_ints.fetchall()
+            cur_ronda.close()
+            cur_ints.close()
             cursor.close()
 
             opciones = [
@@ -4087,63 +3866,12 @@ class HospitalApp(tk.Tk):
             conn = obtener_conexion()
             cursor = conn.cursor()
 
-            # 1. Validar que la internación no esté finalizada
-            cursor.execute("SELECT fecha_fin, numero_de_DNI FROM INTERNACION WHERE id_internacion = :1", [id_int])
-            fila_int = cursor.fetchone()
-            if not fila_int:
-                raise Exception(f"No se encontró la internación #{id_int} en el sistema.")
-
-            if fila_int[0] is not None:
-                raise Exception(
-                    f"Regla de negocio: La internación #{id_int} ya ha sido finalizada con fecha de alta ({fila_int[0]}).\n"
-                    "Solo se permite agregar comentarios médicos a internaciones activas (no finalizadas)."
-                )
-
-            # 2. REGLA DE NEGOCIO: La habitación actual del paciente debe estar en la ronda del recorrido
-            cursor.execute("""
-                SELECT pos.id_habitacion, r.id_ronda
-                FROM RECORRIDO r,
-                     (
-                         SELECT id_habitacion
-                         FROM POSEE
-                         WHERE id_internacion = :1
-                         ORDER BY fechaHora DESC
-                         FETCH FIRST 1 ROW ONLY
-                     ) pos
-                WHERE r.id_recorrido = :2
-            """, [id_int, id_rec])
-            row_hab_rec = cursor.fetchone()
-            if not row_hab_rec:
-                raise Exception("No se pudo determinar la habitación actual del paciente o el recorrido seleccionado.")
-
-            hab_actual, id_ronda = row_hab_rec[0], row_hab_rec[1]
-
-            cursor.execute("""
-                SELECT COUNT(*)
-                FROM COMPUESTA_POR
-                WHERE id_ronda = :1
-                  AND id_habitacion = :2
-            """, [id_ronda, hab_actual])
-            esta_en_ronda = cursor.fetchone()[0]
-
-            if esta_en_ronda == 0:
-                raise Exception(
-                    f"Regla de negocio: La habitación actual del paciente (Habitación #{hab_actual}) "
-                    f"NO pertenece a la Ronda #{id_ronda} del recorrido seleccionado.\n"
-                    "Solo se pueden hacer comentarios de internaciones cuyas habitaciones estén en su ronda."
-                )
-
+            # Invocar Stored Procedure transaccional 'sp_registrar_comentario' en la base de datos
             id_comentario_var = cursor.var(oracledb.NUMBER)
-            cursor.execute("""
-                INSERT INTO COMENTARIO (contenido, id_internacion, id_recorrido)
-                VALUES (:1, :2, :3)
-                RETURNING id_comentario INTO :4
-            """, [contenido, id_int, id_rec, id_comentario_var])
+            invocar_sp(cursor, "sp_registrar_comentario", [id_int, id_rec, contenido, id_comentario_var])
+            nuevo_id_com = int(id_comentario_var.getvalue())
 
-            nuevo_id_com = int(id_comentario_var.getvalue()[0])
-            conn.commit()
-
-            msg = f"Comentario #{nuevo_id_com} registrado con éxito para la Internación activa #{id_int} (Hab #{hab_actual}) en el Recorrido #{id_rec} (Ronda #{id_ronda})."
+            msg = f"Comentario #{nuevo_id_com} registrado con éxito para la Internación activa #{id_int} en el Recorrido #{id_rec}."
             self.log_exito(msg)
             messagebox.showinfo("Comentario Registrado", msg)
 
@@ -4212,8 +3940,7 @@ class HospitalApp(tk.Tk):
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM COMENTARIO WHERE id_comentario = :1", [id_com])
-            conn.commit()
+            invocar_sp(cursor, "sp_eliminar_comentario", [id_com])
             self.log_exito(f"Comentario #{id_com} eliminado correctamente.")
             messagebox.showinfo("Éxito", f"Comentario #{id_com} eliminado correctamente.")
 
@@ -4364,6 +4091,55 @@ class HospitalApp(tk.Tk):
         self.txt_sql.delete("1.0", tk.END)
         self.txt_sql.insert(tk.END, sql)
 
+    @staticmethod
+    def _validar_sql_consola(sql):
+        """
+        Valida que desde la consola SQL del frontend no se ejecuten sentencias que:
+        - Creen/modifiquen internaciones (INTERNACION, sp_registrar_internacion, sp_dar_alta_internacion)
+        - Muevan pacientes de cama o alteren camas (POSEE, CAMA, sp_ocupar_cama_posee)
+        - Modifiquen la tabla de auditoría (AUDITORIA_GUARDIAS / AUDITORIA*)
+        Las consultas de solo lectura (SELECT / WITH) están permitidas.
+        Retorna (permitido: bool, motivo: str | None).
+        """
+        # Eliminar comentarios /* ... */ y -- ...
+        limpio = re.sub(r'/\*.*?\*/', ' ', sql, flags=re.DOTALL)
+        limpio = re.sub(r'--[^\r\n]*', ' ', limpio)
+        limpio_up = re.sub(r'\s+', ' ', limpio).strip().upper()
+
+        if not limpio_up:
+            return True, None
+
+        # Verificar si es una consulta de solo lectura pura (SELECT o WITH sin palabras de modificación/PLSQL)
+        es_lectura = limpio_up.startswith("SELECT ") or limpio_up.startswith("SELECT\n") or limpio_up.startswith("WITH ")
+        tiene_modificacion = bool(re.search(
+            r'\b(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|DROP|ALTER|CREATE|GRANT|REVOKE|REPLACE|CALL|EXEC|EXECUTE|BEGIN|DECLARE)\b',
+            limpio_up
+        ))
+
+        if es_lectura and not tiene_modificacion:
+            return True, None
+
+        if tiene_modificacion:
+            if re.search(r'\b([A-Z0-9_]+\.)?AUDITORIA[A-Z0-9_]*\b', limpio_up):
+                return False, (
+                    "🚫 Operación bloqueada en la consola SQL:\n\n"
+                    "No está permitido insertar, modificar ni eliminar registros de la tabla de auditoría."
+                )
+            if re.search(r'\b([A-Z0-9_]+\.)?(INTERNACION|SP_REGISTRAR_INTERNACION|SP_DAR_ALTA_INTERNACION)\b', limpio_up):
+                return False, (
+                    "🚫 Operación bloqueada en la consola SQL:\n\n"
+                    "No está permitido crear ni modificar internaciones desde la consola SQL.\n"
+                    "Por favor, utiliza la pestaña '🏥 Internación y Camas'."
+                )
+            if re.search(r'\b([A-Z0-9_]+\.)?(POSEE|CAMA|SP_OCUPAR_CAMA_POSEE)\b', limpio_up):
+                return False, (
+                    "🚫 Operación bloqueada en la consola SQL:\n\n"
+                    "No está permitido mover pacientes de cama ni modificar camas desde la consola SQL.\n"
+                    "Por favor, utiliza la pestaña '🏥 Internación y Camas'."
+                )
+
+        return True, None
+
     def accion_ejecutar_sql(self):
         sql = self.txt_sql.get("1.0", tk.END).strip()
         if not sql:
@@ -4371,6 +4147,12 @@ class HospitalApp(tk.Tk):
 
         if sql.endswith(';'):
             sql = sql[:-1].strip()
+
+        permitido, motivo_bloqueo = self._validar_sql_consola(sql)
+        if not permitido:
+            self.log_error(f"Sentencia bloqueada en consola SQL: '{sql[:60]}...'")
+            messagebox.showwarning("Operación No Permitida", motivo_bloqueo)
+            return
 
         conn = None
         cursor = None

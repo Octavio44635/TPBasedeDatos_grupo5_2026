@@ -457,7 +457,7 @@ insert into cama (
 ) values
    ( 1,
      1,
-     'LIBRE' ); -- El trigger trg_ocupar_cama_posee la pondrá automáticamente en 'OCUPADA' al insertar en POSEE
+     'OCUPADA' );
 insert into cama (
    id_habitacion,
    nro_cama,
@@ -476,20 +476,46 @@ insert into cama (
      'LIBRE' );
 
 
+insert into vacacion (
+   numero_de_matricula,
+   nro_vacacion,
+   fecha_inicio_vac,
+   fecha_fin_vac
+) values
+   ( 'M101',
+     1,
+     to_date('2026-12-15','YYYY-MM-DD'),
+     to_date('2026-12-30','YYYY-MM-DD') );
+
+insert into vacacion (
+   numero_de_matricula,
+   nro_vacacion,
+   fecha_inicio_vac,
+   fecha_fin_vac
+) values
+   ( 'M102',
+     1,
+     to_date('2026-11-15','YYYY-MM-DD'),
+     to_date('2026-11-30','YYYY-MM-DD') );
+
+
 insert into internacion (
    fecha_inicio,
    numero_de_dni,
    numero_de_matricula
 ) values
-   ( sysdate - 5,
+   ( to_date('2026-11-15','YYYY-MM-DD'),
      '11111111',
-     'M102' );
+     'M103' );
 
--- Caso de prueba del TRIGGER trg_evitar_autoatencion (descomentar para probar que rechaza la autoatencion, debe arrojar error ORA-20008)
+-- Caso de prueba del TRIGGER trg_evitar_autoatencion (descomentar para probar que rechaza la autoatencion)
 -- INSERT INTO INTERNACION (fecha_inicio, numero_de_DNI, numero_de_matricula) VALUES (SYSDATE - 1, '11111111', 'M100');
 
--- Caso de prueba del TRIGGER trg_validar_fecha_inicio_int (descomentar para probar que rechaza fecha futura mayor a SYSDATE, debe arrojar error ORA-20011)
--- INSERT INTO INTERNACION (fecha_inicio, numero_de_DNI, numero_de_matricula) VALUES (SYSDATE + 1, '22222222', 'M102');
+-- Caso de prueba del TRIGGER trg_validar_fecha_inicio_int (descomentar para probar que rechaza fecha futura mayor a SYSDATE)
+-- INSERT INTO INTERNACION (fecha_inicio, numero_de_DNI, numero_de_matricula) VALUES (SYSDATE + 1, '22222222', 'M103');
+
+-- Caso de prueba del TRIGGER trg_medico_internacion_vacaciones (descomentar para probar que rechaza internación si el médico está de vacaciones, debe arrojar error ORA-20048)
+-- INSERT INTO INTERNACION (fecha_inicio, numero_de_DNI, numero_de_matricula) VALUES (SYSDATE - 2, '22222222', 'M102');
 
 insert into posee (
    id_internacion,
@@ -540,7 +566,7 @@ insert into comentario (
      1,
      2 );
 
--- Caso de prueba del TRIGGER trg_comentario_ronda (descomentar para verificar que rechaza comentario para internación cuya habitación no pertenece a la ronda del recorrido, debe arrojar error ORA-20014)
+-- Caso de prueba del TRIGGER trg_comentario_ronda (descomentar para verificar que rechaza comentario para internación cuya habitación no pertenece a la ronda del recorrido)
 -- INSERT INTO COMENTARIO (contenido, id_internacion, id_recorrido) VALUES ('Prueba habitación fuera de ronda', 1, 3);
 
 
@@ -583,24 +609,8 @@ insert into tiene (
    ( 'M101',
      3,
      'Si' );
-          
 
-
-commit;
-
-
-insert into vacacion (
-   numero_de_matricula,
-   nro_vacacion,
-   fecha_inicio_vac,
-   fecha_fin_vac
-) values
-   ( 'M101',
-     1,
-     to_date('2026-12-15','YYYY-MM-DD'),
-     to_date('2026-12-30','YYYY-MM-DD') );
-
--- Caso de prueba del TRIGGER trg_medico_en_vacaciones (descomentar para probar que rechaza asignar guardia en vacaciones, debe arrojar error ORA-20021):
+-- Caso de prueba del TRIGGER trg_medico_en_vacaciones (descomentar para probar que rechaza asignar guardia en vacaciones):
 -- INSERT INTO GUARDIA (id_guardia, turno, fecha) VALUES (999, 'NOCHE', TO_DATE('2026-12-20', 'YYYY-MM-DD'));
 -- INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia) VALUES ('M101', 1, 999);
 
