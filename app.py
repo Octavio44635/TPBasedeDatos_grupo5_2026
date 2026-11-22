@@ -1840,7 +1840,7 @@ class HospitalApp(tk.Tk):
                 invocar_sp(cursor, "sp_registrar_medico", [dni, nom, ape, mat, cuil, guardias])
             
             self.log_exito(f"Médico Matrícula {mat} - Dr. {ape}, {nom} registrado exitosamente.")
-            messagebox.showinfo("Éxito", f"Médico Dr. {ape} registrado con éxito ({texto_foto}).")
+            messagebox.showinfo("Éxito", f"Médico Dr. {ape} registrado con éxito.")
             self.med_dni.delete(0, tk.END)
             self.med_nombre.delete(0, tk.END)
             self.med_apellido.delete(0, tk.END)
