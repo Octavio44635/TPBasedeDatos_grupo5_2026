@@ -59,11 +59,11 @@ def parsear_script_sql(contenido):
     for linea in lineas:
         linea_strip = linea.strip()
 
-        # Ignorar comentarios de una sola línea cuando no estamos dentro de un bloque
-        if not en_plsql and (not linea_strip or linea_strip.startswith("--")):
-            continue
-
         linea_up = linea_strip.upper()
+
+        # Ignorar comentarios y comandos de cliente SQL*Plus cuando no estamos dentro de un bloque PL/SQL
+        if not en_plsql and (not linea_strip or linea_strip.startswith("--") or linea_up.startswith(("SET ", "PROMPT", "SHOW ", "SPOOL ", "WHENEVER "))):
+            continue
         if any(linea_up.startswith(k) for k in [
             "CREATE OR REPLACE TRIGGER", "CREATE TRIGGER",
             "CREATE OR REPLACE PROCEDURE", "CREATE PROCEDURE",
@@ -273,6 +273,12 @@ def traducir_error_oracle(error, incluir_tecnico=False, contexto=None):
         explicacion = (
             "No se encontró la persona asociada a la matrícula médica al intentar validar la guardia."
         )
+    elif "20060" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: DATOS OBLIGATORIOS DE ESPECIALIDAD"
+        explicacion = "La matrícula del médico y la especialidad son obligatorias para registrar en la tabla TIENE."
+    elif "20061" in mensaje_mayus:
+        titulo = "❌ REGLA DE NEGOCIO VIOLADA: VALOR INVÁLIDO DE DISPONIBILIDAD"
+        explicacion = "El campo 'dispuesto' solo puede tomar el valor 'Si' o 'No'."
 
     # --------------------------------------------------------------------------
     # 2. TRIGGER INVÁLIDO O ERROR DE COMPILACIÓN (ORA-04098)
@@ -1748,8 +1754,14 @@ class HospitalApp(tk.Tk):
         btn_refrescar = tk.Button(frame_botones_medicos, text="🔄 Refrescar Lista", bg="#E2E8F0", cursor="hand2", command=self.cargar_lista_medicos)
         btn_refrescar.pack(side=tk.LEFT, padx=(0, 5))
 
-        btn_ver_foto = tk.Button(frame_botones_medicos, text="🖼️ Ver Foto del Médico Seleccionado", bg="#E2E8F0", cursor="hand2", command=self.accion_ver_foto_medico)
-        btn_ver_foto.pack(side=tk.LEFT)
+        btn_ver_foto = tk.Button(frame_botones_medicos, text="🖼️ Ver Foto", bg="#E2E8F0", cursor="hand2", command=self.accion_ver_foto_medico)
+        btn_ver_foto.pack(side=tk.LEFT, padx=(0, 5))
+
+        btn_gestionar_esp = tk.Button(
+            frame_botones_medicos, text="🩺 Gestionar Especialidades...", bg="#2B6CB0", fg="white",
+            font=("Segoe UI", 9, "bold"), cursor="hand2", command=self.accion_gestionar_especialidades_medico
+        )
+        btn_gestionar_esp.pack(side=tk.LEFT)
 
         self.cargar_lista_medicos()
 
@@ -1804,6 +1816,203 @@ class HospitalApp(tk.Tk):
             if conn:
                 conn.close()
 
+    def accion_gestionar_especialidades_medico(self):
+        seleccion = self.tabla_medicos.selection()
+        if not seleccion:
+            messagebox.showinfo("Seleccionar Médico", "Por favor selecciona un médico de la lista para gestionar sus especialidades.")
+            return
+
+        item = self.tabla_medicos.item(seleccion[0])
+        matricula = str(item['values'][0])
+        apellido = str(item['values'][2])
+        nombre = str(item['values'][3])
+
+        modal = tk.Toplevel(self)
+        modal.title(f"Especialidades - Dr. {apellido}, {nombre} ({matricula})")
+        modal.geometry("640x520")
+        modal.transient(self)
+        modal.grab_set()
+
+        # Encabezado
+        frame_top = ttk.Frame(modal, padding=12)
+        frame_top.pack(fill=tk.X)
+        ttk.Label(
+            frame_top,
+            text=f"🩺 Especialidades del Dr. {apellido}, {nombre} (Matrícula: {matricula})",
+            font=("Segoe UI", 11, "bold"),
+            foreground="#2B6CB0"
+        ).pack(anchor="w")
+        ttk.Label(
+            frame_top,
+            text="Asigne especialidades al médico e indique si está dispuesto a realizar guardias (tabla TIENE).",
+            font=("Segoe UI", 8, "italic")
+        ).pack(anchor="w", pady=(2, 0))
+
+        # Tabla de especialidades
+        frame_tabla = ttk.LabelFrame(modal, text=" Especialidades Registradas ", padding=8)
+        frame_tabla.pack(fill=tk.BOTH, expand=True, padx=12, pady=4)
+
+        tree_esp = ttk.Treeview(frame_tabla, columns=("ID", "Especialidad", "Tiene", "Dispuesto"), show="headings", height=8)
+        tree_esp.heading("ID", text="ID")
+        tree_esp.heading("Especialidad", text="Especialidad")
+        tree_esp.heading("Tiene", text="Tiene Especialidad")
+        tree_esp.heading("Dispuesto", text="Dispuesto a Guardia")
+        tree_esp.column("ID", width=45, anchor="center")
+        tree_esp.column("Especialidad", width=220, anchor="w")
+        tree_esp.column("Tiene", width=130, anchor="center")
+        tree_esp.column("Dispuesto", width=180, anchor="center")
+        tree_esp.pack(fill=tk.BOTH, expand=True)
+
+        # Formulario de asignación / modificación
+        frame_form = ttk.LabelFrame(modal, text=" Asignar o Modificar Especialidad ", padding=10)
+        frame_form.pack(fill=tk.X, padx=12, pady=(4, 12))
+
+        ttk.Label(frame_form, text="Especialidad:").grid(row=0, column=0, sticky="w", pady=4)
+        cb_esp_modal = ttk.Combobox(frame_form, state="readonly", width=28)
+        cb_esp_modal.grid(row=0, column=1, sticky="w", padx=6, pady=4)
+
+        var_dispuesto = tk.StringVar(value="Si")
+        chk_disp = ttk.Checkbutton(
+            frame_form, text="Dispuesto a guardias (Si/No)",
+            variable=var_dispuesto, onvalue="Si", offvalue="No"
+        )
+        chk_disp.grid(row=0, column=2, sticky="w", padx=10, pady=4)
+
+        def refrescar_datos():
+            tree_esp.delete(*tree_esp.get_children())
+            opciones_combo = []
+            conn = None
+            cur_sp = None
+            try:
+                conn = obtener_conexion()
+                cursor = conn.cursor()
+                cur_sp = cursor.connection.cursor()
+                invocar_sp(cursor, "sp_listar_especialidades_medico", [matricula, cur_sp])
+                filas = cur_sp.fetchall()
+                cur_sp.close()
+                cur_sp = None
+                cursor.close()
+
+                for f in filas:
+                    id_e, nom_e, disp = f[0], f[1], f[2]
+                    tiene_str = "✅ Sí" if disp is not None else "❌ No"
+                    if disp is not None:
+                        disp_str = "🟢 Sí (Disponible)" if str(disp).strip().upper() == "SI" else "🔴 No (No disponible)"
+                    else:
+                        disp_str = "—"
+                    tree_esp.insert("", tk.END, values=(id_e, nom_e, tiene_str, disp_str))
+                    opciones_combo.append(f"{id_e} - {nom_e}")
+
+                cb_esp_modal['values'] = opciones_combo
+                if opciones_combo and not cb_esp_modal.get():
+                    cb_esp_modal.current(0)
+            except Exception as ex:
+                self.reportar_error("Error", ex, prefijo_log="Error al listar especialidades del médico")
+            finally:
+                if cur_sp:
+                    try:
+                        cur_sp.close()
+                    except Exception:
+                        pass
+                if conn:
+                    conn.close()
+
+        def on_tree_select(event=None):
+            sel = tree_esp.selection()
+            if sel:
+                vals = tree_esp.item(sel[0])['values']
+                id_sel = vals[0]
+                disp_val = str(vals[3])
+                for v in cb_esp_modal['values']:
+                    if v.startswith(f"{id_sel} - "):
+                        cb_esp_modal.set(v)
+                        break
+                if "No" in disp_val:
+                    var_dispuesto.set("No")
+                else:
+                    var_dispuesto.set("Si")
+
+        tree_esp.bind("<<TreeviewSelect>>", on_tree_select)
+
+        def accion_guardar_esp():
+            sel_val = cb_esp_modal.get()
+            if not sel_val:
+                messagebox.showwarning("Atención", "Seleccione una especialidad de la lista.", parent=modal)
+                return
+            id_esp = int(sel_val.split(" - ")[0])
+            disp = var_dispuesto.get()
+
+            conn = None
+            try:
+                conn = obtener_conexion()
+                cursor = conn.cursor()
+                invocar_sp(cursor, "sp_asignar_especialidad_medico", [matricula, id_esp, disp])
+                cursor.close()
+                self.log_exito(f"Especialidad {sel_val} asignada al Dr. {apellido} ({matricula}) con dispuesto='{disp}'.")
+                refrescar_datos()
+                self.cargar_combos_guardia()
+                messagebox.showinfo("Éxito", f"Especialidad guardada correctamente para el Dr. {apellido}.", parent=modal)
+            except Exception as ex:
+                self.reportar_error("Error", ex, prefijo_log="Error al asignar especialidad")
+            finally:
+                if conn:
+                    conn.close()
+
+        def accion_quitar_esp():
+            sel_tree = tree_esp.selection()
+            if not sel_tree:
+                messagebox.showinfo("Seleccionar", "Seleccione una especialidad de la lista para quitarla.", parent=modal)
+                return
+            item_vals = tree_esp.item(sel_tree[0])['values']
+            id_esp = int(item_vals[0])
+            nom_esp = str(item_vals[1])
+            tiene_esp = str(item_vals[2])
+
+            if "No" in tiene_esp:
+                messagebox.showinfo("Atención", f"El médico ya no tiene asignada la especialidad '{nom_esp}'.", parent=modal)
+                return
+
+            if not messagebox.askyesno("Confirmar", f"¿Desea quitar la especialidad '{nom_esp}' del Dr. {apellido}?", parent=modal):
+                return
+
+            conn = None
+            try:
+                conn = obtener_conexion()
+                cursor = conn.cursor()
+                invocar_sp(cursor, "sp_quitar_especialidad_medico", [matricula, id_esp])
+                cursor.close()
+                self.log_exito(f"Especialidad {nom_esp} quitada del Dr. {apellido} ({matricula}).")
+                refrescar_datos()
+                self.cargar_combos_guardia()
+                messagebox.showinfo("Éxito", f"Especialidad quitada exitosamente.", parent=modal)
+            except Exception as ex:
+                self.reportar_error("Error", ex, prefijo_log="Error al quitar especialidad")
+            finally:
+                if conn:
+                    conn.close()
+
+        frame_btn_form = ttk.Frame(frame_form)
+        frame_btn_form.grid(row=1, column=0, columnspan=3, pady=(10, 0), sticky="ew")
+
+        btn_guardar_esp = tk.Button(
+            frame_btn_form, text="💾 Asignar / Guardar", bg="#276749", fg="white",
+            font=("Segoe UI", 9, "bold"), cursor="hand2", command=accion_guardar_esp
+        )
+        btn_guardar_esp.pack(side=tk.LEFT, padx=(0, 6))
+
+        btn_quitar = tk.Button(
+            frame_btn_form, text="🗑️ Quitar Especialidad", bg="#9B2C2C", fg="white",
+            font=("Segoe UI", 9), cursor="hand2", command=accion_quitar_esp
+        )
+        btn_quitar.pack(side=tk.LEFT, padx=(0, 6))
+
+        btn_cerrar = tk.Button(
+            frame_btn_form, text="Cerrar", bg="#E2E8F0", cursor="hand2", command=modal.destroy
+        )
+        btn_cerrar.pack(side=tk.RIGHT)
+
+        refrescar_datos()
+
     def accion_insertar_medico(self):
         dni = self.med_dni.get().strip()
         nom = self.med_nombre.get().strip()
@@ -1840,7 +2049,6 @@ class HospitalApp(tk.Tk):
                 invocar_sp(cursor, "sp_registrar_medico", [dni, nom, ape, mat, cuil, guardias])
             
             self.log_exito(f"Médico Matrícula {mat} - Dr. {ape}, {nom} registrado exitosamente.")
-            messagebox.showinfo("Éxito", f"Médico Dr. {ape} registrado con éxito.")
             self.med_dni.delete(0, tk.END)
             self.med_nombre.delete(0, tk.END)
             self.med_apellido.delete(0, tk.END)
@@ -1850,6 +2058,14 @@ class HospitalApp(tk.Tk):
             self.lbl_foto_nombre.config(text="Sin foto")
             self.cargar_lista_medicos()
             self.cargar_combos_guardia()
+
+            if messagebox.askyesno("Médico Registrado", f"Dr. {ape} registrado con éxito.\n\n¿Deseas asignarle especialidades médicas (tabla TIENE) ahora mismo?"):
+                for item_id in self.tabla_medicos.get_children():
+                    if str(self.tabla_medicos.item(item_id)['values'][0]) == mat:
+                        self.tabla_medicos.selection_set(item_id)
+                        self.tabla_medicos.focus(item_id)
+                        self.accion_gestionar_especialidades_medico()
+                        break
 
         except Exception as e:
             if conn:
@@ -4161,67 +4377,126 @@ class HospitalApp(tk.Tk):
         return True, None
 
     def accion_ejecutar_sql(self):
-        sql = self.txt_sql.get("1.0", tk.END).strip()
-        if not sql:
+        sql_input = self.txt_sql.get("1.0", tk.END).strip()
+        if not sql_input:
             return
 
-        if sql.endswith(';'):
-            sql = sql[:-1].strip()
+        # Filtrar comandos de cliente SQL*Plus
+        lineas_validas = []
+        for l in sql_input.splitlines():
+            l_up = l.strip().upper()
+            if not l_up.startswith(("SET ", "PROMPT", "SHOW ", "SPOOL ", "WHENEVER ")):
+                lineas_validas.append(l)
+        sql_limpio = "\n".join(lineas_validas).strip()
 
-        permitido, motivo_bloqueo = self._validar_sql_consola(sql)
-        if not permitido:
-            self.log_error(f"Sentencia bloqueada en consola SQL: '{sql[:60]}...'")
-            messagebox.showwarning("Operación No Permitida", motivo_bloqueo)
+        if not sql_limpio:
+            messagebox.showinfo("Consola SQL", "La entrada solo contenía directivas de cliente SQL*Plus (SET/PROMPT).")
             return
+
+        bloques = parsear_script_sql(sql_limpio)
+        if not bloques:
+            bloques = [sql_limpio.rstrip(';').strip()]
 
         conn = None
         cursor = None
         try:
             conn = obtener_conexion()
             cursor = conn.cursor()
-            cursor.execute(sql)
+            try:
+                cursor.callproc("dbms_output.enable")
+            except Exception:
+                pass
+
+            # Caso 1: Una única consulta de lectura pura (SELECT / WITH)
+            if len(bloques) == 1 and (bloques[0].upper().startswith("SELECT ") or bloques[0].upper().startswith("SELECT\n") or bloques[0].upper().startswith("WITH ")):
+                b = bloques[0].rstrip(';').strip()
+                permitido, motivo_bloqueo = self._validar_sql_consola(b)
+                if not permitido:
+                    self.log_error(f"Sentencia bloqueada en consola SQL: '{b[:60]}...'")
+                    messagebox.showwarning("Operación No Permitida", motivo_bloqueo)
+                    return
+
+                cursor.execute(b)
+                self.tabla_sql.delete(*self.tabla_sql.get_children())
+                if cursor.description:
+                    columnas_ids = [f"c{i}" for i in range(len(cursor.description))]
+                    self.tabla_sql["columns"] = columnas_ids
+                    for i, col in enumerate(cursor.description):
+                        titulo_limpio = col[0].replace('_', ' ')
+                        self.tabla_sql.heading(columnas_ids[i], text=titulo_limpio)
+                        self.tabla_sql.column(columnas_ids[i], width=130, anchor="w")
+
+                    filas = cursor.fetchall()
+                    for fila in filas:
+                        valores = []
+                        for v in fila:
+                            if v is None:
+                                texto = ""
+                            elif isinstance(v, (bytes, bytearray)):
+                                texto = f"[Foto BLOB: {len(v)} bytes]"
+                            elif hasattr(v, 'read'):
+                                texto = "[Foto BLOB]"
+                            elif isinstance(v, (datetime, date)):
+                                if hasattr(v, 'hour') and (v.hour != 0 or v.minute != 0 or v.second != 0):
+                                    texto = v.strftime("%d/%m/%Y %H:%M:%S")
+                                else:
+                                    texto = v.strftime("%d/%m/%Y")
+                            else:
+                                texto = str(v)
+                            valores.append(texto)
+                        self.tabla_sql.insert("", tk.END, values=valores)
+
+                    self.lbl_filas_resultado.config(text=f"✅ {len(filas)} fila(s) retornada(s).")
+                    self.log_exito(f"Consulta SQL ejecutada: '{b[:45]}...' -> {len(filas)} filas.")
+                    return
+
+            # Caso 2: Una o más sentencias DML / Bloques PL/SQL / Scripts de prueba
+            salida_mensajes = []
+            total_ejecutadas = 0
+
+            for idx, b in enumerate(bloques):
+                b_run = b.rstrip(';').strip() if not (b.upper().startswith("BEGIN") or b.upper().startswith("DECLARE")) else b
+                permitido, motivo_bloqueo = self._validar_sql_consola(b_run)
+                if not permitido:
+                    salida_mensajes.append(f"⚠️ [Bloque #{idx+1} omitido]: {motivo_bloqueo}")
+                    continue
+
+                try:
+                    cursor.execute(b_run)
+                    total_ejecutadas += 1
+                except Exception as ex_b:
+                    salida_mensajes.append(f"❌ [Error en bloque #{idx+1}]: {traducir_error_oracle(ex_b, incluir_tecnico=True)}")
+
+            conn.commit()
+
+            # Capturar líneas generadas por DBMS_OUTPUT.PUT_LINE
+            try:
+                line_var = cursor.var(str)
+                status_var = cursor.var(int)
+                while True:
+                    cursor.callproc("dbms_output.get_line", (line_var, status_var))
+                    if status_var.getvalue() != 0:
+                        break
+                    val = line_var.getvalue()
+                    if val is not None:
+                        salida_mensajes.append(str(val))
+            except Exception:
+                pass
 
             self.tabla_sql.delete(*self.tabla_sql.get_children())
+            self.tabla_sql["columns"] = ("Mensaje",)
+            self.tabla_sql.heading("Mensaje", text="Salida de Ejecución / DBMS_OUTPUT")
+            self.tabla_sql.column("Mensaje", width=650, anchor="w")
 
-            if cursor.description:
-                columnas_ids = [f"c{i}" for i in range(len(cursor.description))]
-                self.tabla_sql["columns"] = columnas_ids
-                for i, col in enumerate(cursor.description):
-                    titulo_limpio = col[0].replace('_', ' ')
-                    self.tabla_sql.heading(columnas_ids[i], text=titulo_limpio)
-                    self.tabla_sql.column(columnas_ids[i], width=130, anchor="w")
-
-                filas = cursor.fetchall()
-                for fila in filas:
-                    valores = []
-                    for v in fila:
-                        if v is None:
-                            texto = ""
-                        elif isinstance(v, (bytes, bytearray)):
-                            texto = f"[Foto BLOB: {len(v)} bytes]"
-                        elif hasattr(v, 'read'):
-                            texto = "[Foto BLOB]"
-                        elif isinstance(v, (datetime, date)):
-                            if hasattr(v, 'hour') and (v.hour != 0 or v.minute != 0 or v.second != 0):
-                                texto = v.strftime("%d/%m/%Y %H:%M:%S")
-                            else:
-                                texto = v.strftime("%d/%m/%Y")
-                        else:
-                            texto = str(v)
-                        valores.append(texto)
-                    self.tabla_sql.insert("", tk.END, values=valores)
-
-                self.lbl_filas_resultado.config(text=f"✅ {len(filas)} fila(s) retornada(s).")
-                self.log_exito(f"Consulta SQL ejecutada: '{sql[:45]}...' -> {len(filas)} filas.")
+            if salida_mensajes:
+                for msg in salida_mensajes:
+                    self.tabla_sql.insert("", tk.END, values=(msg,))
+                self.lbl_filas_resultado.config(text=f"✅ {len(salida_mensajes)} línea(s) de salida.")
+                self.log_exito(f"Script SQL ejecutado con éxito ({total_ejecutadas} sentencia/s procesada/s).")
             else:
-                conn.commit()
-                afectadas = cursor.rowcount
-                self.tabla_sql["columns"] = ("Resultado",)
-                self.tabla_sql.heading("Resultado", text="Estado de Ejecución")
-                self.tabla_sql.column("Resultado", width=400)
-                self.tabla_sql.insert("", tk.END, values=(f"Operación realizada exitosamente. Filas afectadas: {afectadas}",))
-                self.lbl_filas_resultado.config(text=f"✅ Filas afectadas: {afectadas}")
-                self.log_exito(f"Sentencia ejecutada: '{sql[:45]}...' (Filas afectadas: {afectadas})")
+                self.tabla_sql.insert("", tk.END, values=(f"Sentencia(s) ejecutada(s) exitosamente. Total procesadas: {total_ejecutadas}",))
+                self.lbl_filas_resultado.config(text=f"✅ {total_ejecutadas} sentencia(s) ejecutada(s).")
+                self.log_exito(f"Ejecución finalizada: {total_ejecutadas} sentencia(s) procesadas.")
 
         except Exception as e:
             if conn:

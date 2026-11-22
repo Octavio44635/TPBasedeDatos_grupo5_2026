@@ -110,6 +110,8 @@ GRANT EXECUTE ON HOSPITAL.sp_listar_rondas_combo          TO "44444444", "333333
 GRANT EXECUTE ON HOSPITAL.sp_listar_recorridos            TO "44444444", "33333333";
 GRANT EXECUTE ON HOSPITAL.sp_listar_recorridos_medico     TO "44444444", "33333333";
 GRANT EXECUTE ON HOSPITAL.sp_listar_comentarios_recorrido TO "44444444", "33333333";
+GRANT EXECUTE ON HOSPITAL.sp_asignar_especialidad_medico  TO "44444444", "33333333";
+GRANT EXECUTE ON HOSPITAL.sp_quitar_especialidad_medico   TO "44444444", "33333333";
 
 -- =============================================================================
 -- 6. SINÓNIMOS PÚBLICOS DE PROCEDIMIENTOS ALMACENADOS
@@ -148,6 +150,8 @@ CREATE OR REPLACE PUBLIC SYNONYM sp_listar_especialidades_medico FOR HOSPITAL.sp
 CREATE OR REPLACE PUBLIC SYNONYM sp_verificar_medico_especialidad FOR HOSPITAL.sp_verificar_medico_especialidad;
 CREATE OR REPLACE PUBLIC SYNONYM sp_listar_guardias              FOR HOSPITAL.sp_listar_guardias;
 CREATE OR REPLACE PUBLIC SYNONYM sp_obtener_datos_guardia        FOR HOSPITAL.sp_obtener_datos_guardia;
+CREATE OR REPLACE PUBLIC SYNONYM sp_asignar_especialidad_medico  FOR HOSPITAL.sp_asignar_especialidad_medico;
+CREATE OR REPLACE PUBLIC SYNONYM sp_quitar_especialidad_medico   FOR HOSPITAL.sp_quitar_especialidad_medico;
 CREATE OR REPLACE PUBLIC SYNONYM sp_listar_rondas_combo          FOR HOSPITAL.sp_listar_rondas_combo;
 CREATE OR REPLACE PUBLIC SYNONYM sp_listar_recorridos            FOR HOSPITAL.sp_listar_recorridos;
 CREATE OR REPLACE PUBLIC SYNONYM sp_listar_recorridos_medico     FOR HOSPITAL.sp_listar_recorridos_medico;

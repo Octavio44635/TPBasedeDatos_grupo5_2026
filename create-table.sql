@@ -623,11 +623,18 @@ END;
 CREATE OR REPLACE TRIGGER trg_auditoria_guardia_update
 AFTER UPDATE OF fecha, turno ON GUARDIA
 FOR EACH ROW
+DECLARE
+    v_cont NUMBER := 0;
 BEGIN
     FOR r IN (SELECT numero_de_matricula FROM CUBIERTA_POR WHERE id_guardia = :NEW.id_guardia) LOOP
+        v_cont := v_cont + 1;
         INSERT INTO AUDITORIA_GUARDIAS (usuario_db, fecha_operacion, tipo_operacion, numero_de_matricula, id_guardia)
         VALUES (USER, SYSTIMESTAMP, 'UPDATE', r.numero_de_matricula, :NEW.id_guardia);
     END LOOP;
+    IF v_cont = 0 THEN
+        INSERT INTO AUDITORIA_GUARDIAS (usuario_db, fecha_operacion, tipo_operacion, numero_de_matricula, id_guardia)
+        VALUES (USER, SYSTIMESTAMP, 'UPDATE', 'Sin asignar', :NEW.id_guardia);
+    END IF;
 END;
 /
 
@@ -1064,6 +1071,12 @@ BEGIN
     IF v_existe = 0 THEN
         INSERT INTO PERSONA (numero_de_DNI, nombre, apellido, rol)
         VALUES (v_dni, p_nombre, p_apellido, 'PACIENTE');
+    ELSE
+        -- Si la persona ya existía (por ejemplo, registrada previamente como médico con rol NULL),
+        -- al registrarse como paciente su discriminador en PERSONA pasa a ser 'PACIENTE':
+        UPDATE PERSONA
+        SET rol = 'PACIENTE'
+        WHERE numero_de_DNI = v_dni;
     END IF;
 
     INSERT INTO PACIENTE (numero_de_DNI, sexo, fecha_de_nacimiento)
@@ -2142,6 +2155,67 @@ EXCEPTION
 END sp_verificar_medico_especialidad;
 /
 
+-- 22 bis. Asignar o actualizar especialidad de un médico (tabla TIENE)
+CREATE OR REPLACE PROCEDURE sp_asignar_especialidad_medico (
+    p_matricula       IN VARCHAR2,
+    p_id_especialidad IN NUMBER,
+    p_dispuesto       IN VARCHAR2 DEFAULT 'Si'
+) AS
+    v_cant NUMBER;
+    v_disp VARCHAR2(10);
+BEGIN
+    IF p_matricula IS NULL OR p_id_especialidad IS NULL THEN
+        RAISE_APPLICATION_ERROR(-20060, 'Regla de negocio: La matrícula del médico y la especialidad son obligatorias.');
+    END IF;
+
+    v_disp := INITCAP(TRIM(NVL(p_dispuesto, 'Si')));
+    IF v_disp NOT IN ('Si', 'No') THEN
+        RAISE_APPLICATION_ERROR(-20061, 'Regla de negocio: El campo dispuesto debe ser Si o No.');
+    END IF;
+
+    SELECT COUNT(*) INTO v_cant
+    FROM TIENE
+    WHERE numero_de_matricula = p_matricula
+      AND id_especialidad = p_id_especialidad;
+
+    IF v_cant = 0 THEN
+        INSERT INTO TIENE (numero_de_matricula, id_especialidad, dispuesto)
+        VALUES (p_matricula, p_id_especialidad, v_disp);
+    ELSE
+        UPDATE TIENE
+        SET dispuesto = v_disp
+        WHERE numero_de_matricula = p_matricula
+          AND id_especialidad = p_id_especialidad;
+    END IF;
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
+END sp_asignar_especialidad_medico;
+/
+
+-- 22 ter. Quitar especialidad de un médico (tabla TIENE)
+CREATE OR REPLACE PROCEDURE sp_quitar_especialidad_medico (
+    p_matricula       IN VARCHAR2,
+    p_id_especialidad IN NUMBER
+) AS
+BEGIN
+    IF p_matricula IS NULL OR p_id_especialidad IS NULL THEN
+        RAISE_APPLICATION_ERROR(-20060, 'Regla de negocio: La matrícula y la especialidad son obligatorias.');
+    END IF;
+
+    DELETE FROM TIENE
+    WHERE numero_de_matricula = p_matricula
+      AND id_especialidad = p_id_especialidad;
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
+END sp_quitar_especialidad_medico;
+/
+
 CREATE OR REPLACE PROCEDURE sp_listar_guardias (
     p_cur OUT SYS_REFCURSOR
 ) AS
@@ -2299,6 +2373,8 @@ GRANT EXECUTE ON sp_listar_rondas_combo          TO PUBLIC;
 GRANT EXECUTE ON sp_listar_recorridos            TO PUBLIC;
 GRANT EXECUTE ON sp_listar_recorridos_medico     TO PUBLIC;
 GRANT EXECUTE ON sp_listar_comentarios_recorrido TO PUBLIC;
+GRANT EXECUTE ON sp_asignar_especialidad_medico  TO PUBLIC;
+GRANT EXECUTE ON sp_quitar_especialidad_medico   TO PUBLIC;
 
 CREATE OR REPLACE PUBLIC SYNONYM sp_ocupar_cama_posee            FOR sp_ocupar_cama_posee;
 CREATE OR REPLACE PUBLIC SYNONYM listar_camas_disponibles         FOR listar_camas_disponibles;
@@ -2338,3 +2414,5 @@ CREATE OR REPLACE PUBLIC SYNONYM sp_listar_rondas_combo          FOR sp_listar_r
 CREATE OR REPLACE PUBLIC SYNONYM sp_listar_recorridos            FOR sp_listar_recorridos;
 CREATE OR REPLACE PUBLIC SYNONYM sp_listar_recorridos_medico     FOR sp_listar_recorridos_medico;
 CREATE OR REPLACE PUBLIC SYNONYM sp_listar_comentarios_recorrido FOR sp_listar_comentarios_recorrido;
+CREATE OR REPLACE PUBLIC SYNONYM sp_asignar_especialidad_medico  FOR sp_asignar_especialidad_medico;
+CREATE OR REPLACE PUBLIC SYNONYM sp_quitar_especialidad_medico   FOR sp_quitar_especialidad_medico;
