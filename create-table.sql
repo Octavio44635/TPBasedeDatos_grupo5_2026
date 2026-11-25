@@ -1,429 +1,603 @@
-DROP TABLE AUDITORIA_GUARDIAS CASCADE CONSTRAINTS;
-DROP TABLE POSEE CASCADE CONSTRAINTS;
-DROP TABLE COMPUESTA_POR CASCADE CONSTRAINTS;
-DROP TABLE TIENE CASCADE CONSTRAINTS;
-DROP TABLE CUBIERTA_POR CASCADE CONSTRAINTS;
-DROP TABLE COMENTARIO CASCADE CONSTRAINTS;
-DROP TABLE RECORRIDO CASCADE CONSTRAINTS;
-DROP TABLE CAMA CASCADE CONSTRAINTS;
-DROP TABLE HABITACION CASCADE CONSTRAINTS;
-DROP TABLE INTERNACION CASCADE CONSTRAINTS;
-DROP TABLE VACACION CASCADE CONSTRAINTS;
-DROP TABLE MEDICO CASCADE CONSTRAINTS;
-DROP TABLE PACIENTE CASCADE CONSTRAINTS;
-DROP TABLE PERSONA CASCADE CONSTRAINTS;
-DROP TABLE SECTOR CASCADE CONSTRAINTS;
-DROP TABLE ESPECIALIDAD CASCADE CONSTRAINTS;
-DROP TABLE RONDA CASCADE CONSTRAINTS;
-DROP TABLE GUARDIA CASCADE CONSTRAINTS;
-CREATE TABLE PERSONA (
-    numero_de_DNI VARCHAR2(8) CONSTRAINT pk_persona PRIMARY KEY, 
-    nombre VARCHAR2(50) CONSTRAINT nn_persona_nombre NOT NULL,
-    apellido VARCHAR2(50) CONSTRAINT nn_persona_apellido NOT NULL,
-    rol VARCHAR2(20) CONSTRAINT chk_persona_rol CHECK (rol IN ('PACIENTE')),
-    CONSTRAINT chk_persona_dni_num CHECK (REGEXP_LIKE(numero_de_DNI, '^[0-9]{8}$'))
+drop table auditoria_guardias cascade constraints;
+drop table posee cascade constraints;
+drop table compuesta_por cascade constraints;
+drop table tiene cascade constraints;
+drop table cubierta_por cascade constraints;
+drop table comentario cascade constraints;
+drop table recorrido cascade constraints;
+drop table cama cascade constraints;
+drop table habitacion cascade constraints;
+drop table internacion cascade constraints;
+drop table vacacion cascade constraints;
+drop table medico cascade constraints;
+drop table paciente cascade constraints;
+drop table persona cascade constraints;
+drop table sector cascade constraints;
+drop table especialidad cascade constraints;
+drop table ronda cascade constraints;
+drop table guardia cascade constraints;
+create table persona (
+   numero_de_dni varchar2(8)
+      constraint pk_persona primary key,
+   nombre        varchar2(50)
+      constraint nn_persona_nombre not null,
+   apellido      varchar2(50)
+      constraint nn_persona_apellido not null,
+   rol           varchar2(20)
+      constraint chk_persona_rol check ( rol in ( 'PACIENTE' ) ),
+   constraint chk_persona_dni_num check ( regexp_like ( numero_de_dni,
+                                                        '^[0-9]{8}$' ) )
 );
-CREATE TABLE PACIENTE (
-    numero_de_DNI VARCHAR2(8),
-    sexo VARCHAR2(10) CONSTRAINT nn_paciente_sexo NOT NULL CONSTRAINT chk_paciente_sexo CHECK (sexo IN ('MASCULINO', 'FEMENINO', 'OTRO')),
-    fecha_de_nacimiento DATE CONSTRAINT nn_paciente_fnac NOT NULL,
-    CONSTRAINT pk_paciente PRIMARY KEY (numero_de_DNI),
-    CONSTRAINT fk_paciente_persona FOREIGN KEY (numero_de_DNI) 
-        REFERENCES PERSONA(numero_de_DNI)
-        ON DELETE CASCADE
+create table paciente (
+   numero_de_dni       varchar2(8),
+   sexo                varchar2(10)
+      constraint nn_paciente_sexo not null
+      constraint chk_paciente_sexo check ( sexo in ( 'MASCULINO',
+                                                     'FEMENINO',
+                                                     'OTRO' ) ),
+   fecha_de_nacimiento date
+      constraint nn_paciente_fnac not null,
+   constraint pk_paciente primary key ( numero_de_dni ),
+   constraint fk_paciente_persona foreign key ( numero_de_dni )
+      references persona ( numero_de_dni )
+         on delete cascade
 );
-CREATE TABLE MEDICO (
-    numero_de_matricula VARCHAR2(10) CONSTRAINT pk_medico PRIMARY KEY,
-    CUIL VARCHAR2(11) CONSTRAINT uq_medico_cuil UNIQUE CONSTRAINT nn_medico_cuil NOT NULL,
-    foto BLOB, 
-    guardias_max NUMBER(3) CONSTRAINT nn_medico_guardias_max NOT NULL CONSTRAINT chk_guardias_max CHECK (guardias_max >= 0),
-    fecha_ingreso DATE DEFAULT SYSDATE CONSTRAINT nn_medico_fecha_ingreso NOT NULL,
-    numero_de_DNI VARCHAR2(8) CONSTRAINT uq_medico_dni UNIQUE CONSTRAINT nn_medico_dni NOT NULL,
-
-    CONSTRAINT fk_medico_persona FOREIGN KEY (numero_de_DNI) 
-        REFERENCES PERSONA(numero_de_DNI),
-    CONSTRAINT chk_medico_cuil_dni CHECK ((numero_de_DNI) = SUBSTR(CUIL, 3, 8)),
-    CONSTRAINT chk_medico_cuil_num CHECK (REGEXP_LIKE(CUIL, '^[0-9]{11}$'))
+create table medico (
+   numero_de_matricula varchar2(10)
+      constraint pk_medico primary key,
+   cuil                varchar2(11)
+      constraint uq_medico_cuil unique
+      constraint nn_medico_cuil not null,
+   foto                blob,
+   guardias_max        number(3)
+      constraint nn_medico_guardias_max not null
+      constraint chk_guardias_max check ( guardias_max >= 0 ),
+   fecha_ingreso       date default sysdate
+      constraint nn_medico_fecha_ingreso not null,
+   numero_de_dni       varchar2(8)
+      constraint uq_medico_dni unique
+      constraint nn_medico_dni not null,
+   constraint fk_medico_persona foreign key ( numero_de_dni )
+      references persona ( numero_de_dni ),
+   constraint chk_medico_cuil_dni
+      check ( ( numero_de_dni ) = substr(
+         cuil,
+         3,
+         8
+      ) ),
+   constraint chk_medico_cuil_num check ( regexp_like ( cuil,
+                                                        '^[0-9]{11}$' ) )
 );
-CREATE TABLE VACACION(
-    numero_de_matricula VARCHAR2(10),
-    nro_vacacion NUMBER(3),
-    fecha_inicio_vac DATE CONSTRAINT nn_vacacion_fecha_inicio NOT NULL,
-    fecha_fin_vac DATE,
-    
-    CONSTRAINT pk_vacacion PRIMARY KEY (numero_de_matricula, nro_vacacion),
-    
-    CONSTRAINT fk_vacacion_medico FOREIGN KEY (numero_de_matricula) 
-        REFERENCES MEDICO(numero_de_matricula)
-        ON DELETE CASCADE,
-        
-    CONSTRAINT chk_vacacion_fechas CHECK (fecha_fin_vac IS NULL OR fecha_fin_vac > fecha_inicio_vac)
+create table vacacion (
+   numero_de_matricula varchar2(10),
+   nro_vacacion        number(3),
+   fecha_inicio_vac    date
+      constraint nn_vacacion_fecha_inicio not null,
+   fecha_fin_vac       date,
+   constraint pk_vacacion primary key ( numero_de_matricula,
+                                        nro_vacacion ),
+   constraint fk_vacacion_medico foreign key ( numero_de_matricula )
+      references medico ( numero_de_matricula )
+         on delete cascade,
+   constraint chk_vacacion_fechas check ( fecha_fin_vac is null
+       or fecha_fin_vac > fecha_inicio_vac )
 );
-CREATE TABLE SECTOR (
-    id_sector NUMBER(7) GENERATED BY DEFAULT AS IDENTITY CONSTRAINT pk_sector PRIMARY KEY,
-    nombre VARCHAR2(20) CONSTRAINT uq_sector_nombre UNIQUE CONSTRAINT nn_sector_nombre NOT NULL
-);
-
-CREATE TABLE ESPECIALIDAD (
-    id_especialidad NUMBER(7) GENERATED BY DEFAULT AS IDENTITY CONSTRAINT pk_especialidad PRIMARY KEY,
-    nombre VARCHAR2(30) CONSTRAINT nn_esp_nombre NOT NULL,
-    CONSTRAINT uq_esp_nombre UNIQUE (nombre)
-);
-
-CREATE TABLE RONDA (
-    id_ronda NUMBER(7) GENERATED BY DEFAULT AS IDENTITY CONSTRAINT pk_ronda PRIMARY KEY, 
-    turno NUMBER(1) CONSTRAINT nn_ronda_turno NOT NULL CONSTRAINT chk_ronda_turno CHECK (turno IN (1, 2, 3, 4)),
-    dia_semana VARCHAR2(15) CONSTRAINT nn_ronda_dia NOT NULL CONSTRAINT chk_ronda_dia CHECK (dia_semana IN ('LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO', 'DOMINGO'))
-); 
-
-CREATE TABLE GUARDIA (
-    id_guardia NUMBER(7) GENERATED BY DEFAULT AS IDENTITY CONSTRAINT pk_guardia PRIMARY KEY,
-    turno VARCHAR2(15) CONSTRAINT nn_guardia_turno NOT NULL CONSTRAINT chk_guardia_turno CHECK (turno IN ('MAÑANA', 'TARDE', 'NOCHE')),
-    fecha DATE CONSTRAINT nn_guardia_fecha NOT NULL
-);
-
-CREATE TABLE INTERNACION (
-    id_internacion NUMBER(7) GENERATED BY DEFAULT AS IDENTITY CONSTRAINT pk_internacion PRIMARY KEY,
-    fecha_inicio DATE CONSTRAINT nn_internacion_fecha_inicio NOT NULL,
-    fecha_fin DATE,
-    
-    numero_de_DNI VARCHAR2(8) CONSTRAINT nn_internacion_dni NOT NULL,
-    numero_de_matricula VARCHAR2(10) CONSTRAINT nn_internacion_matricula NOT NULL,
-    CONSTRAINT fk_internacion_paciente FOREIGN KEY (numero_de_DNI)
-        REFERENCES PACIENTE(numero_de_DNI),
-    
-    CONSTRAINT fk_internacion_medico FOREIGN KEY (numero_de_matricula)
-        REFERENCES MEDICO(numero_de_matricula),
-    CONSTRAINT chk_internacion_fechas CHECK (fecha_fin IS NULL OR fecha_fin >= fecha_inicio)
-);
-CREATE UNIQUE INDEX uq_paciente_int_activa
-ON INTERNACION (CASE WHEN fecha_fin IS NULL THEN numero_de_DNI END);
-CREATE TABLE HABITACION (
-    id_habitacion NUMBER(7) GENERATED BY DEFAULT AS IDENTITY CONSTRAINT pk_habitacion PRIMARY KEY,
-    orientacion VARCHAR2(6) CONSTRAINT nn_habitacion_orientacion NOT NULL CONSTRAINT chk_habitacion_orientacion CHECK (orientacion IN ('NORTE', 'SUR', 'ESTE', 'OESTE')),
-    piso VARCHAR2(2) CONSTRAINT nn_habitacion_piso NOT NULL,
-    id_sector NUMBER(7) CONSTRAINT nn_habitacion_sector NOT NULL,
-    CONSTRAINT fk_habitacion_sector FOREIGN KEY (id_sector)
-        REFERENCES SECTOR(id_sector)
-);
-CREATE TABLE CAMA (
-    id_habitacion NUMBER(7),
-    nro_cama NUMBER(1) CONSTRAINT chk_cama_nro CHECK (nro_cama >= 1),
-    estado VARCHAR2(8) CONSTRAINT nn_cama_estado NOT NULL CONSTRAINT chk_cama_estado CHECK (estado IN ('LIBRE', 'OCUPADA')),
-    CONSTRAINT pk_cama PRIMARY KEY (id_habitacion, nro_cama),
-    CONSTRAINT fk_cama_habitacion FOREIGN KEY (id_habitacion)
-        REFERENCES HABITACION(id_habitacion)
-        ON DELETE CASCADE
+create table sector (
+   id_sector number(7) generated by default as identity
+      constraint pk_sector primary key,
+   nombre    varchar2(20)
+      constraint uq_sector_nombre unique
+      constraint nn_sector_nombre not null
 );
 
-CREATE TABLE RECORRIDO(
-    id_recorrido NUMBER(7) GENERATED BY DEFAULT AS IDENTITY CONSTRAINT pk_recorrido PRIMARY KEY,
-    fecha DATE CONSTRAINT nn_recorrido_fecha NOT NULL,
-    id_ronda NUMBER(7) CONSTRAINT nn_recorrido_ronda NOT NULL,
-    numero_de_matricula VARCHAR2(10) CONSTRAINT nn_recorrido_medico NOT NULL,
-
-    CONSTRAINT fk_recorrido_ronda FOREIGN KEY (id_ronda)
-        REFERENCES RONDA(id_ronda),
-    CONSTRAINT fk_recorrido_medico FOREIGN KEY (numero_de_matricula)
-        REFERENCES MEDICO(numero_de_matricula)
+create table especialidad (
+   id_especialidad number(7) generated by default as identity
+      constraint pk_especialidad primary key,
+   nombre          varchar2(30)
+      constraint nn_esp_nombre not null,
+   constraint uq_esp_nombre unique ( nombre )
 );
 
-CREATE TABLE COMENTARIO(
-    id_comentario NUMBER(7)GENERATED BY DEFAULT AS IDENTITY CONSTRAINT pk_comentario PRIMARY KEY,
-    contenido VARCHAR2(200) CONSTRAINT nn_comentario_contenido NOT NULL,
-    id_internacion NUMBER(7) CONSTRAINT nn_comentario_internacion NOT NULL,
-    id_recorrido NUMBER(7) CONSTRAINT nn_comentario_recorrido NOT NULL,
-
-    CONSTRAINT fk_comentario_internacion FOREIGN KEY (id_internacion)
-        REFERENCES INTERNACION (id_internacion),
-    CONSTRAINT fk_comentario_recorrido FOREIGN KEY (id_recorrido)
-        REFERENCES RECORRIDO(id_recorrido)
-);
-CREATE TABLE POSEE(
-    id_internacion NUMBER(7),
-    id_habitacion NUMBER(7),
-    nro_cama NUMBER(1),
-    fechaHora TIMESTAMP, --tiene que ser mayor a la fecha inicio de internacion
-
-    CONSTRAINT pk_posee PRIMARY KEY (id_internacion, id_habitacion, nro_cama, fechaHora),
-    CONSTRAINT fk_posee_internacion FOREIGN KEY (id_internacion)
-        REFERENCES INTERNACION (id_internacion) ON DELETE CASCADE,
-
-    CONSTRAINT fk_posee_cama FOREIGN KEY (id_habitacion, nro_cama)
-        REFERENCES CAMA (id_habitacion, nro_cama) ON DELETE CASCADE
+create table ronda (
+   id_ronda   number(7) generated by default as identity
+      constraint pk_ronda primary key,
+   turno      number(1)
+      constraint nn_ronda_turno not null
+      constraint chk_ronda_turno check ( turno in ( 1,
+                                                    2,
+                                                    3,
+                                                    4 ) ),
+   dia_semana varchar2(15)
+      constraint nn_ronda_dia not null
+      constraint chk_ronda_dia check ( dia_semana in ( 'LUNES',
+                                                       'MARTES',
+                                                       'MIERCOLES',
+                                                       'JUEVES',
+                                                       'VIERNES',
+                                                       'SABADO',
+                                                       'DOMINGO' ) )
 );
 
-CREATE TABLE COMPUESTA_POR(
-    id_ronda NUMBER(7),
-    id_habitacion NUMBER(7),
-    
-    CONSTRAINT pk_compuesta_por PRIMARY KEY (id_ronda, id_habitacion),
-    CONSTRAINT fk_compuesta_ronda FOREIGN KEY (id_ronda)
-        REFERENCES RONDA (id_ronda) ON DELETE CASCADE,
-
-    CONSTRAINT fk_compuesta_habitacion FOREIGN KEY (id_habitacion)
-        REFERENCES HABITACION (id_habitacion) ON DELETE CASCADE
-);
-CREATE TABLE TIENE(
-    numero_de_matricula VARCHAR2(10),
-    id_especialidad NUMBER(7),
-    dispuesto VARCHAR2(2) CONSTRAINT nn_tiene_dispuesto NOT NULL CONSTRAINT chk_tiene_dispuesto CHECK (dispuesto IN ('Si', 'No')),
-    CONSTRAINT pk_tiene PRIMARY KEY (numero_de_matricula, id_especialidad),
-    CONSTRAINT fk_tiene_medico FOREIGN KEY (numero_de_matricula)
-        REFERENCES MEDICO (numero_de_matricula) ON DELETE CASCADE,
-
-    CONSTRAINT fk_tiene_especialidad FOREIGN KEY (id_especialidad)
-        REFERENCES ESPECIALIDAD (id_especialidad) ON DELETE CASCADE
-
+create table guardia (
+   id_guardia number(7) generated by default as identity
+      constraint pk_guardia primary key,
+   turno      varchar2(15)
+      constraint nn_guardia_turno not null
+      constraint chk_guardia_turno check ( turno in ( 'MAÑANA',
+                                                      'TARDE',
+                                                      'NOCHE' ) ),
+   fecha      date
+      constraint nn_guardia_fecha not null
 );
 
-CREATE TABLE CUBIERTA_POR(
-    numero_de_matricula VARCHAR2(10),
-    id_especialidad NUMBER(7),
-    id_guardia NUMBER(7),
-    CONSTRAINT pk_cubierta_por PRIMARY KEY (numero_de_matricula, id_especialidad, id_guardia),
-    CONSTRAINT fk_cubierta_tiene FOREIGN KEY (numero_de_matricula, id_especialidad)
-        REFERENCES TIENE (numero_de_matricula, id_especialidad) ON DELETE CASCADE,
-    
-    CONSTRAINT fk_cubierta_guardia FOREIGN KEY (id_guardia)
-        REFERENCES GUARDIA (id_guardia) ON DELETE CASCADE
+create table internacion (
+   id_internacion      number(7) generated by default as identity
+      constraint pk_internacion primary key,
+   fecha_inicio        date
+      constraint nn_internacion_fecha_inicio not null,
+   fecha_fin           date,
+   numero_de_dni       varchar2(8)
+      constraint nn_internacion_dni not null,
+   numero_de_matricula varchar2(10)
+      constraint nn_internacion_matricula not null,
+   constraint fk_internacion_paciente foreign key ( numero_de_dni )
+      references paciente ( numero_de_dni ),
+   constraint fk_internacion_medico foreign key ( numero_de_matricula )
+      references medico ( numero_de_matricula ),
+   constraint chk_internacion_fechas
+      check ( fecha_fin is null
+          or fecha_fin >= fecha_inicio )
 );
--- Normalización automática de DNI de 7 dígitos (rellena con '0' adelante hasta 8 dígitos)
-CREATE OR REPLACE TRIGGER trg_normalizar_dni_persona
-BEFORE INSERT OR UPDATE OF numero_de_DNI ON PERSONA
-FOR EACH ROW
-BEGIN
-    IF :NEW.numero_de_DNI IS NOT NULL AND REGEXP_LIKE(TRIM(:NEW.numero_de_DNI), '^[0-9]{7}$') THEN
-        :NEW.numero_de_DNI := LPAD(TRIM(:NEW.numero_de_DNI), 8, '0');
-    END IF;
-END;
+create unique index uq_paciente_int_activa on
+   internacion (
+      case
+         when
+            fecha_fin
+         is null then
+               numero_de_dni
+      end
+   );
+create table habitacion (
+   id_habitacion number(7) generated by default as identity
+      constraint pk_habitacion primary key,
+   orientacion   varchar2(6)
+      constraint nn_habitacion_orientacion not null
+      constraint chk_habitacion_orientacion check ( orientacion in ( 'NORTE',
+                                                                     'SUR',
+                                                                     'ESTE',
+                                                                     'OESTE' ) ),
+   piso          varchar2(2)
+      constraint nn_habitacion_piso not null,
+   id_sector     number(7)
+      constraint nn_habitacion_sector not null,
+   constraint fk_habitacion_sector foreign key ( id_sector )
+      references sector ( id_sector )
+);
+create table cama (
+   id_habitacion number(7),
+   nro_cama      number(1)
+      constraint chk_cama_nro check ( nro_cama >= 1 ),
+   estado        varchar2(8)
+      constraint nn_cama_estado not null
+      constraint chk_cama_estado check ( estado in ( 'LIBRE',
+                                                     'OCUPADA' ) ),
+   constraint pk_cama primary key ( id_habitacion,
+                                    nro_cama ),
+   constraint fk_cama_habitacion foreign key ( id_habitacion )
+      references habitacion ( id_habitacion )
+         on delete cascade
+);
+
+create table recorrido (
+   id_recorrido        number(7) generated by default as identity
+      constraint pk_recorrido primary key,
+   fecha               date
+      constraint nn_recorrido_fecha not null,
+   id_ronda            number(7)
+      constraint nn_recorrido_ronda not null,
+   numero_de_matricula varchar2(10)
+      constraint nn_recorrido_medico not null,
+   constraint fk_recorrido_ronda foreign key ( id_ronda )
+      references ronda ( id_ronda ),
+   constraint fk_recorrido_medico foreign key ( numero_de_matricula )
+      references medico ( numero_de_matricula )
+);
+
+create table comentario (
+   id_comentario  number(7) generated by default as identity
+      constraint pk_comentario primary key,
+   contenido      varchar2(200)
+      constraint nn_comentario_contenido not null,
+   id_internacion number(7)
+      constraint nn_comentario_internacion not null,
+   id_recorrido   number(7)
+      constraint nn_comentario_recorrido not null,
+   constraint fk_comentario_internacion foreign key ( id_internacion )
+      references internacion ( id_internacion ),
+   constraint fk_comentario_recorrido foreign key ( id_recorrido )
+      references recorrido ( id_recorrido )
+);
+create table posee (
+   id_internacion number(7),
+   id_habitacion  number(7),
+   nro_cama       number(1),
+   fechahora      timestamp, --tiene que ser mayor a la fecha inicio de internacion
+
+   constraint pk_posee
+      primary key ( id_internacion,
+                    id_habitacion,
+                    nro_cama,
+                    fechahora ),
+   constraint fk_posee_internacion foreign key ( id_internacion )
+      references internacion ( id_internacion )
+         on delete cascade,
+   constraint fk_posee_cama
+      foreign key ( id_habitacion,
+                    nro_cama )
+         references cama ( id_habitacion,
+                           nro_cama )
+            on delete cascade
+);
+
+create table compuesta_por (
+   id_ronda      number(7),
+   id_habitacion number(7),
+   constraint pk_compuesta_por primary key ( id_ronda,
+                                             id_habitacion ),
+   constraint fk_compuesta_ronda foreign key ( id_ronda )
+      references ronda ( id_ronda )
+         on delete cascade,
+   constraint fk_compuesta_habitacion foreign key ( id_habitacion )
+      references habitacion ( id_habitacion )
+         on delete cascade
+);
+create table tiene (
+   numero_de_matricula varchar2(10),
+   id_especialidad     number(7),
+   dispuesto           varchar2(2)
+      constraint nn_tiene_dispuesto not null
+      constraint chk_tiene_dispuesto check ( dispuesto in ( 'Si',
+                                                            'No' ) ),
+   constraint pk_tiene primary key ( numero_de_matricula,
+                                     id_especialidad ),
+   constraint fk_tiene_medico foreign key ( numero_de_matricula )
+      references medico ( numero_de_matricula )
+         on delete cascade,
+   constraint fk_tiene_especialidad foreign key ( id_especialidad )
+      references especialidad ( id_especialidad )
+         on delete cascade
+);
+
+create table cubierta_por (
+   numero_de_matricula varchar2(10),
+   id_especialidad     number(7),
+   id_guardia          number(7),
+   constraint pk_cubierta_por primary key ( numero_de_matricula,
+                                            id_especialidad,
+                                            id_guardia ),
+   constraint fk_cubierta_tiene
+      foreign key ( numero_de_matricula,
+                    id_especialidad )
+         references tiene ( numero_de_matricula,
+                            id_especialidad )
+            on delete cascade,
+   constraint fk_cubierta_guardia foreign key ( id_guardia )
+      references guardia ( id_guardia )
+         on delete cascade
+);
+
+
+-- PROPÓSITO: Valida que la fecha en que el paciente ocupa una cama se encuentre dentro del período de inicio y fin de su internación.
+create or replace trigger trg_posee_fecha before
+   insert or update on posee
+   for each row
+declare
+   v_inicio date;
+   v_fin    date;
+begin
+   select fecha_inicio,
+          fecha_fin
+     into
+      v_inicio,
+      v_fin
+     from internacion
+    where id_internacion = :new.id_internacion;
+
+   if trunc(cast(:new.fechahora as date)) < trunc(v_inicio) then
+      raise_application_error(
+         -20001,
+         'La asignación de cama no puede ser anterior al inicio de la internación.'
+      );
+   end if;
+
+   if
+      v_fin is not null
+      and trunc(cast(:new.fechahora as date)) > trunc(v_fin)
+   then
+      raise_application_error(
+         -20002,
+         'La asignación de cama no puede ser posterior al fin de la internación.'
+      );
+   end if;
+end;
 /
 
-CREATE OR REPLACE TRIGGER trg_normalizar_dni_paciente
-BEFORE INSERT OR UPDATE OF numero_de_DNI ON PACIENTE
-FOR EACH ROW
-BEGIN
-    IF :NEW.numero_de_DNI IS NOT NULL AND REGEXP_LIKE(TRIM(:NEW.numero_de_DNI), '^[0-9]{7}$') THEN
-        :NEW.numero_de_DNI := LPAD(TRIM(:NEW.numero_de_DNI), 8, '0');
-    END IF;
-END;
+-- PROPÓSITO: Verifica que el médico posea la especialidad requerida y haya marcado su conformidad para cubrir guardias en ella.
+create or replace trigger trg_medico_dispuesto before
+   insert or update on cubierta_por
+   for each row
+declare
+   v_dispuesto varchar2(2);
+begin
+   begin
+      select dispuesto
+        into v_dispuesto
+        from tiene
+       where numero_de_matricula = :new.numero_de_matricula
+         and id_especialidad = :new.id_especialidad;
+   exception
+      when no_data_found then
+         raise_application_error(
+            -20047,
+            'Regla de negocio: El médico no tiene registrada la especialidad seleccionada.'
+         );
+   end;
+
+   if upper(trim(v_dispuesto)) != 'SI' then
+      raise_application_error(
+         -20003,
+         'Regla de negocio: El médico no está dispuesto a realizar guardias en esta especialidad.'
+      );
+   end if;
+end;
+/
+-- PROPÓSITO: Controla que un médico no supere su cantidad máxima permitida de guardias durante un mismo mes al asignarle una guardia.
+create or replace trigger trg_limite_guardias after
+   insert or update on cubierta_por
+declare
+   v_matricula medico.numero_de_matricula%type;
+   v_max       number;
+   v_anio      number;
+   v_mes       number;
+   v_asignadas number;
+begin
+   begin
+      select cp.numero_de_matricula,
+             nvl(
+                m.guardias_max,
+                0
+             ),
+             extract(year from g.fecha),
+             extract(month from g.fecha),
+             count(distinct cp.id_guardia)
+        into
+         v_matricula,
+         v_max,
+         v_anio,
+         v_mes,
+         v_asignadas
+        from cubierta_por cp
+        join guardia g
+      on cp.id_guardia = g.id_guardia
+        join medico m
+      on cp.numero_de_matricula = m.numero_de_matricula
+       group by cp.numero_de_matricula,
+                nvl(
+                   m.guardias_max,
+                   0
+                ),
+                extract(year from g.fecha),
+                extract(month from g.fecha)
+      having count(distinct cp.id_guardia) > nvl(
+         m.guardias_max,
+         0
+      )
+       fetch first 1 row only;
+
+      raise_application_error(
+         -20005,
+         'Regla de negocio: El médico '
+         || v_matricula
+         || ' superó su máximo de guardias ('
+         || v_max
+         || ') para el período '
+         || lpad(
+            to_char(v_mes),
+            2,
+            '0'
+         )
+         || '/'
+         || v_anio
+         || ' (asignadas: '
+         || v_asignadas
+         || ').'
+      );
+   exception
+      when no_data_found then
+         null;
+   end;
+end;
 /
 
-CREATE OR REPLACE TRIGGER trg_normalizar_dni_medico
-BEFORE INSERT OR UPDATE OF numero_de_DNI ON MEDICO
-FOR EACH ROW
-BEGIN
-    IF :NEW.numero_de_DNI IS NOT NULL AND REGEXP_LIKE(TRIM(:NEW.numero_de_DNI), '^[0-9]{7}$') THEN
-        :NEW.numero_de_DNI := LPAD(TRIM(:NEW.numero_de_DNI), 8, '0');
-    END IF;
-END;
+-- PROPÓSITO: Controla que un médico no supere su límite mensual de guardias cuando se reprograma o modifica la fecha de una guardia ya asignada.
+create or replace trigger trg_limite_guardias_fecha after
+   update of fecha on guardia
+declare
+   v_matricula medico.numero_de_matricula%type;
+   v_max       number;
+   v_anio      number;
+   v_mes       number;
+   v_asignadas number;
+begin
+   begin
+      select cp.numero_de_matricula,
+             nvl(
+                m.guardias_max,
+                0
+             ),
+             extract(year from g.fecha),
+             extract(month from g.fecha),
+             count(distinct cp.id_guardia)
+        into
+         v_matricula,
+         v_max,
+         v_anio,
+         v_mes,
+         v_asignadas
+        from cubierta_por cp
+        join guardia g
+      on cp.id_guardia = g.id_guardia
+        join medico m
+      on cp.numero_de_matricula = m.numero_de_matricula
+       group by cp.numero_de_matricula,
+                nvl(
+                   m.guardias_max,
+                   0
+                ),
+                extract(year from g.fecha),
+                extract(month from g.fecha)
+      having count(distinct cp.id_guardia) > nvl(
+         m.guardias_max,
+         0
+      )
+       fetch first 1 row only;
+
+      raise_application_error(
+         -20005,
+         'Regla de negocio: El médico '
+         || v_matricula
+         || ' superó su máximo de guardias ('
+         || v_max
+         || ') para el período '
+         || lpad(
+            to_char(v_mes),
+            2,
+            '0'
+         )
+         || '/'
+         || v_anio
+         || ' (asignadas: '
+         || v_asignadas
+         || ').'
+      );
+   exception
+      when no_data_found then
+         null;
+   end;
+end;
 /
 
-CREATE OR REPLACE TRIGGER trg_normalizar_dni_internacion
-BEFORE INSERT OR UPDATE OF numero_de_DNI ON INTERNACION
-FOR EACH ROW
-BEGIN
-    IF :NEW.numero_de_DNI IS NOT NULL AND REGEXP_LIKE(TRIM(:NEW.numero_de_DNI), '^[0-9]{7}$') THEN
-        :NEW.numero_de_DNI := LPAD(TRIM(:NEW.numero_de_DNI), 8, '0');
-    END IF;
-END;
-/
-CREATE OR REPLACE TRIGGER trg_posee_fecha
-BEFORE INSERT OR UPDATE ON POSEE
-FOR EACH ROW
-DECLARE
-    v_inicio DATE;
-    v_fin DATE;
-BEGIN
-    SELECT fecha_inicio, fecha_fin INTO v_inicio, v_fin
-    FROM INTERNACION
-    WHERE ID_INTERNACION = :NEW.ID_INTERNACION;
+-- PROPÓSITO: Impide asignar una guardia a un médico si esa fecha coincide con su período de vacaciones.
+create or replace trigger trg_medico_en_vacaciones before
+   insert or update on cubierta_por
+   for each row
+declare
+   v_fecha_guardia date;
+   v_ini_vac       varchar2(10);
+   v_fin_vac       varchar2(10);
+   v_en_vacaciones number;
+begin
+   begin
+      select fecha
+        into v_fecha_guardia
+        from guardia
+       where id_guardia = :new.id_guardia;
+   exception
+      when no_data_found then
+         return;
+   end;
 
-    IF TRUNC(CAST(:NEW.fechaHora AS DATE)) < TRUNC(v_inicio) THEN
-        RAISE_APPLICATION_ERROR(-20001,'La asignación de cama no puede ser anterior al inicio de la internación.');
-    END IF;
+   select count(*)
+     into v_en_vacaciones
+     from vacacion
+    where numero_de_matricula = :new.numero_de_matricula
+      and trunc(v_fecha_guardia) >= trunc(fecha_inicio_vac)
+      and ( fecha_fin_vac is null
+       or trunc(v_fecha_guardia) <= trunc(fecha_fin_vac) );
 
-    IF v_fin IS NOT NULL AND TRUNC(CAST(:NEW.fechaHora AS DATE)) > TRUNC(v_fin) THEN
-        RAISE_APPLICATION_ERROR(-20002,'La asignación de cama no puede ser posterior al fin de la internación.');
-    END IF;
-END;
-/
+   if v_en_vacaciones > 0 then
+      begin
+         select to_char(
+            fecha_inicio_vac,
+            'DD/MM/YYYY'
+         ),
+                to_char(
+                   fecha_fin_vac,
+                   'DD/MM/YYYY'
+                )
+           into
+            v_ini_vac,
+            v_fin_vac
+           from vacacion
+          where numero_de_matricula = :new.numero_de_matricula
+            and trunc(v_fecha_guardia) >= trunc(fecha_inicio_vac)
+            and ( fecha_fin_vac is null
+             or trunc(v_fecha_guardia) <= trunc(fecha_fin_vac) )
+          fetch first 1 row only;
+      exception
+         when no_data_found then
+            v_ini_vac := 'N/D';
+            v_fin_vac := 'N/D';
+      end;
 
-CREATE OR REPLACE TRIGGER trg_medico_dispuesto
-BEFORE INSERT OR UPDATE ON CUBIERTA_POR
-FOR EACH ROW
-DECLARE
-    v_dispuesto VARCHAR2(2);
-BEGIN
-    BEGIN
-        SELECT dispuesto INTO v_dispuesto
-        FROM TIENE
-        WHERE NUMERO_DE_MATRICULA = :NEW.NUMERO_DE_MATRICULA
-            AND ID_ESPECIALIDAD = :NEW.ID_ESPECIALIDAD;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20047, 'Regla de negocio: El médico no tiene registrada la especialidad seleccionada.');
-    END;
-
-    IF UPPER(TRIM(v_dispuesto)) != 'SI' THEN
-        RAISE_APPLICATION_ERROR(-20003, 'Regla de negocio: El médico no está dispuesto a realizar guardias en esta especialidad.');
-    END IF;
-END;
-/
--- Regla de negocio: Validar límite mensual de guardias por médico según la fecha real de la guardia
--- Se utilizan triggers a nivel de sentencia (sin FOR EACH ROW) para evitar ORA-04091 y ver filas de la misma transacción.
-CREATE OR REPLACE TRIGGER trg_limite_guardias
-AFTER INSERT OR UPDATE ON CUBIERTA_POR
-DECLARE
-    v_matricula  MEDICO.numero_de_matricula%TYPE;
-    v_max        NUMBER;
-    v_anio       NUMBER;
-    v_mes        NUMBER;
-    v_asignadas  NUMBER;
-BEGIN
-    BEGIN
-        SELECT cp.numero_de_matricula,
-               NVL(m.guardias_max, 0),
-               EXTRACT(YEAR FROM g.fecha),
-               EXTRACT(MONTH FROM g.fecha),
-               COUNT(DISTINCT cp.id_guardia)
-        INTO v_matricula, v_max, v_anio, v_mes, v_asignadas
-        FROM CUBIERTA_POR cp
-        JOIN GUARDIA g ON cp.id_guardia = g.id_guardia
-        JOIN MEDICO m ON cp.numero_de_matricula = m.numero_de_matricula
-        GROUP BY cp.numero_de_matricula,
-                 NVL(m.guardias_max, 0),
-                 EXTRACT(YEAR FROM g.fecha),
-                 EXTRACT(MONTH FROM g.fecha)
-        HAVING COUNT(DISTINCT cp.id_guardia) > NVL(m.guardias_max, 0)
-        FETCH FIRST 1 ROW ONLY;
-
-        RAISE_APPLICATION_ERROR(
-            -20005,
-            'Regla de negocio: El médico ' || v_matricula || ' superó su máximo de guardias (' || v_max || ') para el período ' || LPAD(TO_CHAR(v_mes), 2, '0') || '/' || v_anio || ' (asignadas: ' || v_asignadas || ').'
-        );
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            NULL;
-    END;
-END;
+      raise_application_error(
+         -20021,
+         'Regla de negocio: El médico '
+         || :new.numero_de_matricula
+         || ' se encuentra de vacaciones en la fecha de la guardia ('
+         || to_char(
+            v_fecha_guardia,
+            'DD/MM/YYYY'
+         )
+         || '). Período de vacaciones: del '
+         || v_ini_vac
+         || ' al '
+         || nvl(
+            v_fin_vac,
+            'indefinido'
+         )
+         || '.'
+      );
+   end if;
+end;
 /
 
-CREATE OR REPLACE TRIGGER trg_limite_guardias_fecha
-AFTER UPDATE OF fecha ON GUARDIA
-DECLARE
-    v_matricula  MEDICO.numero_de_matricula%TYPE;
-    v_max        NUMBER;
-    v_anio       NUMBER;
-    v_mes        NUMBER;
-    v_asignadas  NUMBER;
-BEGIN
-    BEGIN
-        SELECT cp.numero_de_matricula,
-               NVL(m.guardias_max, 0),
-               EXTRACT(YEAR FROM g.fecha),
-               EXTRACT(MONTH FROM g.fecha),
-               COUNT(DISTINCT cp.id_guardia)
-        INTO v_matricula, v_max, v_anio, v_mes, v_asignadas
-        FROM CUBIERTA_POR cp
-        JOIN GUARDIA g ON cp.id_guardia = g.id_guardia
-        JOIN MEDICO m ON cp.numero_de_matricula = m.numero_de_matricula
-        GROUP BY cp.numero_de_matricula,
-                 NVL(m.guardias_max, 0),
-                 EXTRACT(YEAR FROM g.fecha),
-                 EXTRACT(MONTH FROM g.fecha)
-        HAVING COUNT(DISTINCT cp.id_guardia) > NVL(m.guardias_max, 0)
-        FETCH FIRST 1 ROW ONLY;
+-- PROPÓSITO: Al registrar el alta de una internación, libera automáticamente la cama que estaba ocupando el paciente.
+create or replace trigger trg_liberar_cama_fin_int after
+   update of fecha_fin on internacion
+   for each row
+   when ( old.fecha_fin is null
+      and new.fecha_fin is not null )
+declare
+   v_id_habitacion number(7);
+   v_nro_cama      number(1);
+begin
+   begin
+      select id_habitacion,
+             nro_cama
+        into
+         v_id_habitacion,
+         v_nro_cama
+        from posee
+       where id_internacion = :new.id_internacion
+       order by fechahora desc
+       fetch first 1 row only;
 
-        RAISE_APPLICATION_ERROR(
-            -20005,
-            'Regla de negocio: El médico ' || v_matricula || ' superó su máximo de guardias (' || v_max || ') para el período ' || LPAD(TO_CHAR(v_mes), 2, '0') || '/' || v_anio || ' (asignadas: ' || v_asignadas || ').'
-        );
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            NULL;
-    END;
-END;
-/
-
--- Regla de negocio: Validar que un médico NO esté de vacaciones al asignarle una guardia
-CREATE OR REPLACE TRIGGER trg_medico_en_vacaciones
-BEFORE INSERT OR UPDATE ON CUBIERTA_POR
-FOR EACH ROW
-DECLARE
-    v_fecha_guardia DATE;
-    v_ini_vac VARCHAR2(10);
-    v_fin_vac VARCHAR2(10);
-    v_en_vacaciones NUMBER;
-BEGIN
-    -- 1. Obtener la fecha de la guardia
-    BEGIN
-        SELECT fecha INTO v_fecha_guardia
-        FROM GUARDIA
-        WHERE id_guardia = :NEW.id_guardia;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RETURN;
-    END;
-
-    -- 2. Verificar si la fecha de la guardia cae dentro del período de vacaciones del médico
-    SELECT COUNT(*) INTO v_en_vacaciones
-    FROM VACACION
-    WHERE numero_de_matricula = :NEW.numero_de_matricula
-      AND TRUNC(v_fecha_guardia) >= TRUNC(fecha_inicio_vac)
-      AND (fecha_fin_vac IS NULL OR TRUNC(v_fecha_guardia) <= TRUNC(fecha_fin_vac));
-
-    IF v_en_vacaciones > 0 THEN
-        BEGIN
-            SELECT TO_CHAR(fecha_inicio_vac, 'DD/MM/YYYY'), TO_CHAR(fecha_fin_vac, 'DD/MM/YYYY')
-            INTO v_ini_vac, v_fin_vac
-            FROM VACACION
-            WHERE numero_de_matricula = :NEW.numero_de_matricula
-              AND TRUNC(v_fecha_guardia) >= TRUNC(fecha_inicio_vac)
-              AND (fecha_fin_vac IS NULL OR TRUNC(v_fecha_guardia) <= TRUNC(fecha_fin_vac))
-            FETCH FIRST 1 ROW ONLY;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                v_ini_vac := 'N/D';
-                v_fin_vac := 'N/D';
-        END;
-
-        RAISE_APPLICATION_ERROR(-20021, 'Regla de negocio: El médico ' || :NEW.numero_de_matricula || ' se encuentra de vacaciones en la fecha de la guardia (' || TO_CHAR(v_fecha_guardia, 'DD/MM/YYYY') || '). Período de vacaciones: del ' || v_ini_vac || ' al ' || NVL(v_fin_vac, 'indefinido') || '.');
-    END IF;
-END;
-/
-
-CREATE OR REPLACE TRIGGER trg_liberar_cama_fin_int
-AFTER UPDATE OF fecha_fin ON INTERNACION
-FOR EACH ROW
-WHEN (OLD.fecha_fin IS NULL AND NEW.fecha_fin IS NOT NULL)
-DECLARE
-    v_id_habitacion NUMBER(7);
-    v_nro_cama NUMBER(1);
-BEGIN
-    BEGIN
-        SELECT id_habitacion, nro_cama 
-        INTO v_id_habitacion, v_nro_cama
-        FROM POSEE
-        WHERE id_internacion = :NEW.id_internacion
-        ORDER BY fechaHora DESC
-        FETCH FIRST 1 ROW ONLY;
-
-        UPDATE CAMA
-        SET estado = 'LIBRE'
-        WHERE id_habitacion = v_id_habitacion
-          AND nro_cama = v_nro_cama;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            NULL;
-    END;
-END;
+      update cama
+         set
+         estado = 'LIBRE'
+       where id_habitacion = v_id_habitacion
+         and nro_cama = v_nro_cama;
+   exception
+      when no_data_found then
+         null;
+   end;
+end;
 /
 
 -- ==============================================================================
--- PROCEDIMIENTO ALMACENADO TRANSACCIONAL: ASIGNAR O TRASLADAR CAMA (POSEE)
--- Reemplaza al trigger trg_ocupar_cama_posee, manejando la transacción completa,
--- bloqueo de concurrencia pesimista (FOR UPDATE) y garantizando atomicidad (todo o nada).
+-- Maneja la transacción completa. Bloqueo de concurrencia pesismista con FOR UPDATE 
+-- y garantiza la atomicidad 
 -- Antes de operar valida:
 -- 1. Que la internación exista y esté activa (sin alta médica).
 -- 2. Que la habitación exista en el hospital.
@@ -432,603 +606,845 @@ END;
 -- Ocupa la nueva cama, inserta en POSEE y confirma con COMMIT.
 -- Ante cualquier fallo, aplica ROLLBACK para no dejar transacciones a mitad de hacer.
 -- ==============================================================================
-CREATE OR REPLACE PROCEDURE sp_ocupar_cama_posee (
-    p_id_internacion IN NUMBER,
-    p_id_habitacion  IN NUMBER,
-    p_nro_cama       IN NUMBER
-) AS
-    v_fecha_fin      DATE;
-    v_cant_hab       NUMBER;
-    v_estado_cama    VARCHAR2(8);
-    v_hab_anterior   NUMBER(7);
-    v_cama_anterior  NUMBER(1);
-BEGIN
-    -- 1. Validar que la internación exista y esté activa (sin alta médica previa)
-    BEGIN
-        SELECT fecha_fin
-        INTO v_fecha_fin
-        FROM INTERNACION
-        WHERE id_internacion = p_id_internacion;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20018, 'Regla de negocio: La internación #' || p_id_internacion || ' no existe en la base de datos.');
-    END;
+-- PROPÓSITO: Realiza el traslado o asignación de cama de forma segura, liberando la cama anterior y ocupando la nueva cama.
+create or replace procedure sp_ocupar_cama_posee (
+   p_id_internacion in number,
+   p_id_habitacion  in number,
+   p_nro_cama       in number
+) as
+   v_fecha_fin     date;
+   v_cant_hab      number;
+   v_estado_cama   varchar2(8);
+   v_hab_anterior  number(7);
+   v_cama_anterior number(1);
+begin
+   begin
+      select fecha_fin
+        into v_fecha_fin
+        from internacion
+       where id_internacion = p_id_internacion;
+   exception
+      when no_data_found then
+         raise_application_error(
+            -20018,
+            'Regla de negocio: La internación #'
+            || p_id_internacion
+            || ' no existe en la base de datos.'
+         );
+   end;
 
-    IF v_fecha_fin IS NOT NULL THEN
-        RAISE_APPLICATION_ERROR(-20012, 'Regla de negocio: La internación #' || p_id_internacion || ' ya se encuentra finalizada con alta médica. No se puede asignar ni cambiar de cama.');
-    END IF;
+   if v_fecha_fin is not null then
+      raise_application_error(
+         -20012,
+         'Regla de negocio: La internación #'
+         || p_id_internacion
+         || ' ya se encuentra finalizada con alta médica. No se puede asignar ni cambiar de cama.'
+      );
+   end if;
 
-    -- 2. Validar que la habitación exista en el hospital
-    SELECT COUNT(*)
-    INTO v_cant_hab
-    FROM HABITACION
-    WHERE id_habitacion = p_id_habitacion;
+   select count(*)
+     into v_cant_hab
+     from habitacion
+    where id_habitacion = p_id_habitacion;
 
-    IF v_cant_hab = 0 THEN
-        RAISE_APPLICATION_ERROR(-20016, 'Regla de negocio: La habitación ' || p_id_habitacion || ' no existe en la base de datos.');
-    END IF;
+   if v_cant_hab = 0 then
+      raise_application_error(
+         -20016,
+         'Regla de negocio: La habitación '
+         || p_id_habitacion
+         || ' no existe en la base de datos.'
+      );
+   end if;
 
-    -- 3. Validar que la cama exista y bloquearla para control de concurrencia pesimista
-    BEGIN
-        SELECT estado
-        INTO v_estado_cama
-        FROM CAMA
-        WHERE id_habitacion = p_id_habitacion
-          AND nro_cama = p_nro_cama
-        FOR UPDATE;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20017, 'Regla de negocio: La cama ' || p_nro_cama || ' de la habitación ' || p_id_habitacion || ' no existe en la base de datos.');
-    END;
+   begin
+      select estado
+        into v_estado_cama
+        from cama
+       where id_habitacion = p_id_habitacion
+         and nro_cama = p_nro_cama
+      for update;
+   exception
+      when no_data_found then
+         raise_application_error(
+            -20017,
+            'Regla de negocio: La cama '
+            || p_nro_cama
+            || ' de la habitación '
+            || p_id_habitacion
+            || ' no existe en la base de datos.'
+         );
+   end;
 
-    -- Validar que la cama esté disponible (LIBRE)
-    IF UPPER(v_estado_cama) != 'LIBRE' THEN
-        RAISE_APPLICATION_ERROR(-20019, 'Regla de negocio: La cama (Habitación ' || p_id_habitacion || ', Cama ' || p_nro_cama || ') no está disponible (Estado actual: ' || v_estado_cama || ').');
-    END IF;
+   if upper(v_estado_cama) != 'LIBRE' then
+      raise_application_error(
+         -20019,
+         'Regla de negocio: La cama (Habitación '
+         || p_id_habitacion
+         || ', Cama '
+         || p_nro_cama
+         || ') no está disponible (Estado actual: '
+         || v_estado_cama
+         || ').'
+      );
+   end if;
 
-    -- 4. Verificar si el paciente ya tenía una cama previa en esta internación
-    BEGIN
-        SELECT id_habitacion, nro_cama
-        INTO v_hab_anterior, v_cama_anterior
-        FROM POSEE
-        WHERE id_internacion = p_id_internacion
-        ORDER BY fechaHora DESC
-        FETCH FIRST 1 ROW ONLY;
+   begin
+      select id_habitacion,
+             nro_cama
+        into
+         v_hab_anterior,
+         v_cama_anterior
+        from posee
+       where id_internacion = p_id_internacion
+       order by fechahora desc
+       fetch first 1 row only;
 
-        -- Validar que no se intente trasladar a la misma cama actual
-        IF v_hab_anterior = p_id_habitacion AND v_cama_anterior = p_nro_cama THEN
-            RAISE_APPLICATION_ERROR(-20020, 'Regla de negocio: El paciente ya se encuentra actualmente en la Habitación ' || p_id_habitacion || ', Cama ' || p_nro_cama || '.');
-        END IF;
+      if
+         v_hab_anterior = p_id_habitacion
+         and v_cama_anterior = p_nro_cama
+      then
+         raise_application_error(
+            -20020,
+            'Regla de negocio: El paciente ya se encuentra actualmente en la Habitación '
+            || p_id_habitacion
+            || ', Cama '
+            || p_nro_cama
+            || '.'
+         );
+      end if;
 
-        -- Liberar la cama previa
-        UPDATE CAMA
-        SET estado = 'LIBRE'
-        WHERE id_habitacion = v_hab_anterior
-          AND nro_cama = v_cama_anterior;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
+      update cama
+         set
+         estado = 'LIBRE'
+       where id_habitacion = v_hab_anterior
+         and nro_cama = v_cama_anterior;
+   exception
+      when no_data_found then
             -- Es la primera asignación de cama de la internación
-            NULL;
-    END;
+         null;
+   end;
 
-    -- 5. Insertar el nuevo registro en el historial de camas (POSEE)
-    INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
-    VALUES (p_id_internacion, p_id_habitacion, p_nro_cama, SYSTIMESTAMP);
+   insert into posee (
+      id_internacion,
+      id_habitacion,
+      nro_cama,
+      fechahora
+   ) values
+      ( p_id_internacion,
+        p_id_habitacion,
+        p_nro_cama,
+        systimestamp );
 
-    -- 6. Actualizar la nueva cama a 'OCUPADA'
-    UPDATE CAMA
-    SET estado = 'OCUPADA'
-    WHERE id_habitacion = p_id_habitacion
-      AND nro_cama = p_nro_cama;
+   update cama
+      set
+      estado = 'OCUPADA'
+    where id_habitacion = p_id_habitacion
+      and nro_cama = p_nro_cama;
 
-    -- 7. Confirmar toda la transacción atómicamente
-    COMMIT;
-
-EXCEPTION
-    WHEN OTHERS THEN
+   commit;
+exception
+   when others then
         -- Si ocurre cualquier error, deshacer de inmediato para que ninguna transacción quede a medias
-        ROLLBACK;
-        RAISE;
-END sp_ocupar_cama_posee;
+      rollback;
+      raise;
+end sp_ocupar_cama_posee;
 /
-CREATE OR REPLACE PROCEDURE listar_camas_disponibles (p_resumen OUT SYS_REFCURSOR, p_detalle OUT SYS_REFCURSOR) AS
-    BEGIN
-        OPEN p_resumen FOR
-            SELECT s.NOMBRE AS sector, COUNT(c.NRO_CAMA) AS disponibles
-            FROM SECTOR s
-            LEFT JOIN HABITACION h ON s.ID_SECTOR = h.ID_SECTOR
-            LEFT JOIN CAMA c ON h.ID_HABITACION = c.ID_HABITACION AND UPPER(c.ESTADO) = 'LIBRE'
-            GROUP BY s.NOMBRE
-            ORDER BY s.NOMBRE;
-        
-        OPEN p_detalle FOR
-            SELECT s.NOMBRE as nombre_sector, h.ID_HABITACION, h.PISO, c.NRO_CAMA, c.ESTADO
-            FROM CAMA c
-            JOIN HABITACION h ON c.ID_HABITACION = h.ID_HABITACION
-            JOIN SECTOR s ON h.ID_SECTOR = s.ID_SECTOR
-            WHERE UPPER(c.ESTADO) = 'LIBRE'
-            ORDER BY s.NOMBRE, h.ID_HABITACION, c.NRO_CAMA;
-    END;
-/
+-- PROPÓSITO: Devuelve la lista de camas disponibles y desocupadas para una habitación específica.
+create or replace procedure listar_camas_disponibles (
+   p_resumen out sys_refcursor,
+   p_detalle out sys_refcursor
+) as
+begin
+   open p_resumen for select s.nombre as sector,
+                             count(c.nro_cama) as disponibles
+     from sector s
+     left join habitacion h
+   on s.id_sector = h.id_sector
+     left join cama c
+   on h.id_habitacion = c.id_habitacion
+      and upper(c.estado) = 'LIBRE'
+    group by s.nombre
+    order by s.nombre;
 
-CREATE OR REPLACE PROCEDURE listar_comentarios_internacion (
-    p_id_internacion IN NUMBER,
-    p_info_paciente OUT SYS_REFCURSOR,
-    p_comentarios OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_info_paciente FOR
-        SELECT i.id_internacion AS nro_internacion,
-               p.nombre || ' ' || p.apellido AS paciente,
-               i.numero_de_DNI AS dni
-        FROM INTERNACION i
-        JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
-        WHERE i.id_internacion = p_id_internacion;
-
-    OPEN p_comentarios FOR
-        SELECT TO_CHAR(r.fecha, 'DD/MM/YYYY') AS fecha_visita,
-               ro.turno AS turno,
-               per_medico.nombre || ' ' || per_medico.apellido AS medico,
-               m.numero_de_matricula AS matricula,
-               c.contenido AS comentario
-               
-        FROM COMENTARIO c
-        JOIN RECORRIDO r ON c.id_recorrido = r.id_recorrido
-        JOIN MEDICO m ON r.numero_de_matricula = m.numero_de_matricula
-        JOIN PERSONA per_medico ON m.numero_de_DNI = per_medico.numero_de_DNI
-        JOIN RONDA ro ON r.id_ronda = ro.id_ronda 
-        WHERE c.id_internacion = p_id_internacion
-        ORDER BY r.fecha DESC;
-END;
+   open p_detalle for select s.nombre as nombre_sector,
+                             h.id_habitacion,
+                             h.piso,
+                             c.nro_cama,
+                             c.estado
+     from cama c
+     join habitacion h
+   on c.id_habitacion = h.id_habitacion
+     join sector s
+   on h.id_sector = s.id_sector
+    where upper(c.estado) = 'LIBRE'
+    order by s.nombre,
+             h.id_habitacion,
+             c.nro_cama;
+end;
 /
 
-CREATE TABLE AUDITORIA_GUARDIAS (
-    id_auditoria NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    usuario_db VARCHAR2(50),
-    fecha_operacion TIMESTAMP,
-    tipo_operacion VARCHAR2(10),
-    numero_de_matricula VARCHAR2(10),
-    id_guardia NUMBER
+-- PROPÓSITO: Devuelve el historial de comentarios médicos y observaciones registrados durante una internación.
+create or replace procedure listar_comentarios_internacion (
+   p_id_internacion in number,
+   p_info_paciente  out sys_refcursor,
+   p_comentarios    out sys_refcursor
+) as
+begin
+   open p_info_paciente for select i.id_internacion as nro_internacion,
+                                   p.nombre
+                                   || ' '
+                                   || p.apellido as paciente,
+                                   i.numero_de_dni as dni
+     from internacion i
+     join persona p
+   on i.numero_de_dni = p.numero_de_dni
+    where i.id_internacion = p_id_internacion;
+
+   open p_comentarios for select to_char(
+      r.fecha,
+      'DD/MM/YYYY'
+   ) as fecha_visita,
+                                 ro.turno as turno,
+                                 per_medico.nombre
+                                 || ' '
+                                 || per_medico.apellido as medico,
+                                 m.numero_de_matricula as matricula,
+                                 c.contenido as comentario
+     from comentario c
+     join recorrido r
+   on c.id_recorrido = r.id_recorrido
+     join medico m
+   on r.numero_de_matricula = m.numero_de_matricula
+     join persona per_medico
+   on m.numero_de_dni = per_medico.numero_de_dni
+     join ronda ro
+   on r.id_ronda = ro.id_ronda
+    where c.id_internacion = p_id_internacion
+    order by r.fecha desc;
+end;
+/
+
+create table auditoria_guardias (
+   id_auditoria        number generated by default as identity primary key,
+   usuario_db          varchar2(50),
+   fecha_operacion     timestamp,
+   tipo_operacion      varchar2(10),
+   numero_de_matricula varchar2(10),
+   id_guardia          number
 );
-CREATE OR REPLACE TRIGGER trg_auditoria_guardias
-AFTER INSERT OR UPDATE OR DELETE ON CUBIERTA_POR
-FOR EACH ROW
-DECLARE
-    v_operacion VARCHAR2(10);
-    v_matricula VARCHAR2(10);
-    v_id_guardia NUMBER;
-BEGIN
-    -- Determinamos el tipo de operación y capturamos los datos afectados
-    IF INSERTING THEN
-        v_operacion := 'INSERT';
-        v_matricula := :NEW.numero_de_matricula;
-        v_id_guardia := :NEW.id_guardia;
-    ELSIF UPDATING THEN
-        v_operacion := 'UPDATE';
-        v_matricula := :NEW.numero_de_matricula;
-        v_id_guardia := :NEW.id_guardia;
-    ELSIF DELETING THEN
-        v_operacion := 'DELETE';
-        v_matricula := :OLD.numero_de_matricula;
-        v_id_guardia := :OLD.id_guardia;
-    END IF;
+-- PROPÓSITO: Registra en la tabla de auditoría cada vez que se asigna o retira un médico de una guardia.
+create or replace trigger trg_auditoria_guardias after
+   insert or update or delete on cubierta_por
+   for each row
+declare
+   v_operacion  varchar2(10);
+   v_matricula  varchar2(10);
+   v_id_guardia number;
+begin
+   if inserting then
+      v_operacion := 'INSERT';
+      v_matricula := :new.numero_de_matricula;
+      v_id_guardia := :new.id_guardia;
+   elsif updating then
+      v_operacion := 'UPDATE';
+      v_matricula := :new.numero_de_matricula;
+      v_id_guardia := :new.id_guardia;
+   elsif deleting then
+      v_operacion := 'DELETE';
+      v_matricula := :old.numero_de_matricula;
+      v_id_guardia := :old.id_guardia;
+   end if;
 
-    -- Insertamos el registro en la tabla de auditoría usando funciones del sistema (USER y SYSTIMESTAMP)
-    INSERT INTO AUDITORIA_GUARDIAS (usuario_db, fecha_operacion, tipo_operacion, numero_de_matricula, id_guardia)
-    VALUES (USER, SYSTIMESTAMP, v_operacion, v_matricula, v_id_guardia);
-END;
+   insert into auditoria_guardias (
+      usuario_db,
+      fecha_operacion,
+      tipo_operacion,
+      numero_de_matricula,
+      id_guardia
+   ) values
+      ( user,
+        systimestamp,
+        v_operacion,
+        v_matricula,
+        v_id_guardia );
+end;
 /
 
--- Auditoría de modificación de guardia (cuando cambia fecha o turno en GUARDIA)
-CREATE OR REPLACE TRIGGER trg_auditoria_guardia_update
-AFTER UPDATE OF fecha, turno ON GUARDIA
-FOR EACH ROW
-DECLARE
-    v_cont NUMBER := 0;
-BEGIN
-    FOR r IN (SELECT numero_de_matricula FROM CUBIERTA_POR WHERE id_guardia = :NEW.id_guardia) LOOP
-        v_cont := v_cont + 1;
-        INSERT INTO AUDITORIA_GUARDIAS (usuario_db, fecha_operacion, tipo_operacion, numero_de_matricula, id_guardia)
-        VALUES (USER, SYSTIMESTAMP, 'UPDATE', r.numero_de_matricula, :NEW.id_guardia);
-    END LOOP;
-    IF v_cont = 0 THEN
-        INSERT INTO AUDITORIA_GUARDIAS (usuario_db, fecha_operacion, tipo_operacion, numero_de_matricula, id_guardia)
-        VALUES (USER, SYSTIMESTAMP, 'UPDATE', 'Sin asignar', :NEW.id_guardia);
-    END IF;
-END;
+-- PROPÓSITO: Registra en la tabla de auditoría cuando se modifica la fecha o el turno de una guardia existente.
+create or replace trigger trg_auditoria_guardia_update after
+   update of fecha,turno on guardia
+   for each row
+declare
+   v_cont number := 0;
+begin
+   for r in (
+      select numero_de_matricula
+        from cubierta_por
+       where id_guardia = :new.id_guardia
+   ) loop
+      v_cont := v_cont + 1;
+      insert into auditoria_guardias (
+         usuario_db,
+         fecha_operacion,
+         tipo_operacion,
+         numero_de_matricula,
+         id_guardia
+      ) values
+         ( user,
+           systimestamp,
+           'UPDATE',
+           r.numero_de_matricula,
+           :new.id_guardia );
+   end loop;
+   if v_cont = 0 then
+      insert into auditoria_guardias (
+         usuario_db,
+         fecha_operacion,
+         tipo_operacion,
+         numero_de_matricula,
+         id_guardia
+      ) values
+         ( user,
+           systimestamp,
+           'UPDATE',
+           'Sin asignar',
+           :new.id_guardia );
+   end if;
+end;
 /
 
--- Regla de negocio: No se puede asignar una guardia a un médico con la misma fecha y turno
--- Se utiliza COMPOUND TRIGGER para:
--- 1. Evitar error ORA-04091 (mutating table) sin necesidad de PRAGMA AUTONOMOUS_TRANSACTION.
--- 2. Permitir que el trigger vea las filas de GUARDIA insertadas en la misma transacción (evita ORA-01403).
--- 3. Comparar fechas con TRUNC para ignorar horas/minutos accidentales.
-CREATE OR REPLACE TRIGGER trg_evitar_guardia_superpuesta
-FOR INSERT OR UPDATE ON CUBIERTA_POR
-COMPOUND TRIGGER
+-- PROPÓSITO: Evita que a un mismo médico se le asigne más de una guardia en el mismo turno y día.
+create or replace trigger trg_evitar_guardia_superpuesta for
+   insert or update on cubierta_por
+compound trigger
+   type t_cubierta is record (
+         matricula  varchar2(10),
+         id_guardia number
+   );
+   type t_cubierta_list is
+      table of t_cubierta index by pls_integer;
+   g_lista t_cubierta_list;
+   before statement is begin
+      g_lista.delete;
+   end before statement;
+   after each row is begin
+      g_lista(g_lista.count + 1).matricula := :new.numero_de_matricula;
+      g_lista(g_lista.count).id_guardia := :new.id_guardia;
+   end after each row;
+   after statement is
+      v_cant  number;
+      v_fecha date;
+      v_turno varchar2(15);
+   begin
+      for i in 1..g_lista.count loop
+         begin
+            select fecha,
+                   upper(turno)
+              into
+               v_fecha,
+               v_turno
+              from guardia
+             where id_guardia = g_lista(i).id_guardia;
+         exception
+            when no_data_found then
+               v_fecha := null;
+               v_turno := null;
+         end;
 
-    TYPE t_cubierta IS RECORD (
-        matricula  VARCHAR2(10),
-        id_guardia NUMBER
-    );
-    TYPE t_cubierta_list IS TABLE OF t_cubierta INDEX BY PLS_INTEGER;
-    g_lista t_cubierta_list;
+         if v_fecha is not null then
+            select count(*)
+              into v_cant
+              from cubierta_por cp
+              join guardia g
+            on cp.id_guardia = g.id_guardia
+             where cp.numero_de_matricula = g_lista(i).matricula
+               and trunc(g.fecha) = trunc(v_fecha)
+               and upper(g.turno) = v_turno
+               and cp.id_guardia != g_lista(i).id_guardia;
 
-    BEFORE STATEMENT IS
-    BEGIN
-        g_lista.DELETE;
-    END BEFORE STATEMENT;
-
-    AFTER EACH ROW IS
-    BEGIN
-        g_lista(g_lista.COUNT + 1).matricula := :NEW.numero_de_matricula;
-        g_lista(g_lista.COUNT).id_guardia := :NEW.id_guardia;
-    END AFTER EACH ROW;
-
-    AFTER STATEMENT IS
-        v_cant NUMBER;
-        v_fecha DATE;
-        v_turno VARCHAR2(15);
-    BEGIN
-        FOR i IN 1 .. g_lista.COUNT LOOP
-            -- 1. Obtener la fecha y turno de la guardia que se está asignando
-            BEGIN
-                SELECT fecha, UPPER(turno) INTO v_fecha, v_turno
-                FROM GUARDIA
-                WHERE id_guardia = g_lista(i).id_guardia;
-            EXCEPTION
-                WHEN NO_DATA_FOUND THEN
-                    v_fecha := NULL;
-                    v_turno := NULL;
-            END;
-
-            IF v_fecha IS NOT NULL THEN
-                -- 2. Verificar si el médico ya tiene asignada otra guardia en la misma fecha y turno
-                SELECT COUNT(*) INTO v_cant
-                FROM CUBIERTA_POR cp
-                JOIN GUARDIA g ON cp.id_guardia = g.id_guardia
-                WHERE cp.numero_de_matricula = g_lista(i).matricula
-                  AND TRUNC(g.fecha) = TRUNC(v_fecha)
-                  AND UPPER(g.turno) = v_turno
-                  AND cp.id_guardia != g_lista(i).id_guardia;
-
-                IF v_cant > 0 THEN
-                    RAISE_APPLICATION_ERROR(-20015, 'Regla de negocio: El médico ya tiene asignada una guardia en la misma fecha y turno.');
-                END IF;
-            END IF;
-        END LOOP;
-    END AFTER STATEMENT;
-END trg_evitar_guardia_superpuesta;
+            if v_cant > 0 then
+               raise_application_error(
+                  -20015,
+                  'Regla de negocio: El médico ya tiene asignada una guardia en la misma fecha y turno.'
+               );
+            end if;
+         end if;
+      end loop;
+   end after statement;
+end trg_evitar_guardia_superpuesta;
 /
 
--- Regla de negocio: Validar que al cambiar fecha/turno de una guardia, ningún médico asignado tenga conflicto
-CREATE OR REPLACE TRIGGER trg_validar_cambio_guardia
-FOR UPDATE OF fecha, turno ON GUARDIA
-COMPOUND TRIGGER
+-- PROPÓSITO: Verifica que al reprogramar una guardia ningún médico asignado tenga conflicto de superposición con otra guardia en ese mismo turno.
+create or replace trigger trg_validar_cambio_guardia for
+   update of fecha,turno on guardia
+compound trigger
+   type t_guardia is record (
+         id_guardia number,
+         fecha      date,
+         turno      varchar2(15)
+   );
+   type t_guardia_list is
+      table of t_guardia index by pls_integer;
+   g_filas t_guardia_list;
+   before statement is begin
+      g_filas.delete;
+   end before statement;
+   after each row is begin
+      g_filas(g_filas.count + 1).id_guardia := :new.id_guardia;
+      g_filas(g_filas.count).fecha := :new.fecha;
+      g_filas(g_filas.count).turno := :new.turno;
+   end after each row;
+   after statement is
+      v_cant     number;
+      v_vac_cant number;
+   begin
+      for i in 1..g_filas.count loop
+         select count(*)
+           into v_cant
+           from cubierta_por cp_actual
+           join cubierta_por cp_otra
+         on cp_actual.numero_de_matricula = cp_otra.numero_de_matricula
+           join guardia g_otra
+         on cp_otra.id_guardia = g_otra.id_guardia
+          where cp_actual.id_guardia = g_filas(i).id_guardia
+            and trunc(g_otra.fecha) = trunc(g_filas(i).fecha)
+            and upper(g_otra.turno) = upper(g_filas(i).turno)
+            and g_otra.id_guardia != g_filas(i).id_guardia;
 
-    TYPE t_guardia IS RECORD (
-        id_guardia NUMBER,
-        fecha      DATE,
-        turno      VARCHAR2(15)
-    );
-    TYPE t_guardia_list IS TABLE OF t_guardia INDEX BY PLS_INTEGER;
-    g_filas t_guardia_list;
+         if v_cant > 0 then
+            raise_application_error(
+               -20015,
+               'Regla de negocio: Uno de los médicos asignados a esta guardia ya tiene otra guardia en la nueva fecha y turno.'
+            );
+         end if;
+         select count(*)
+           into v_vac_cant
+           from cubierta_por cp
+           join vacacion v
+         on cp.numero_de_matricula = v.numero_de_matricula
+          where cp.id_guardia = g_filas(i).id_guardia
+            and trunc(g_filas(i).fecha) >= trunc(v.fecha_inicio_vac)
+            and ( v.fecha_fin_vac is null
+             or trunc(g_filas(i).fecha) <= trunc(v.fecha_fin_vac) );
 
-    BEFORE STATEMENT IS
-    BEGIN
-        g_filas.DELETE;
-    END BEFORE STATEMENT;
-
-    AFTER EACH ROW IS
-    BEGIN
-        g_filas(g_filas.COUNT + 1).id_guardia := :NEW.id_guardia;
-        g_filas(g_filas.COUNT).fecha := :NEW.fecha;
-        g_filas(g_filas.COUNT).turno := :NEW.turno;
-    END AFTER EACH ROW;
-
-    AFTER STATEMENT IS
-        v_cant NUMBER;
-        v_vac_cant NUMBER;
-    BEGIN
-        FOR i IN 1 .. g_filas.COUNT LOOP
-            -- 1. Validar que ningún médico asignado tenga otra guardia en la nueva fecha y turno
-            SELECT COUNT(*) INTO v_cant
-            FROM CUBIERTA_POR cp_actual
-            JOIN CUBIERTA_POR cp_otra ON cp_actual.numero_de_matricula = cp_otra.numero_de_matricula
-            JOIN GUARDIA g_otra ON cp_otra.id_guardia = g_otra.id_guardia
-            WHERE cp_actual.id_guardia = g_filas(i).id_guardia
-              AND TRUNC(g_otra.fecha) = TRUNC(g_filas(i).fecha)
-              AND UPPER(g_otra.turno) = UPPER(g_filas(i).turno)
-              AND g_otra.id_guardia != g_filas(i).id_guardia;
-
-            IF v_cant > 0 THEN
-                RAISE_APPLICATION_ERROR(-20015, 'Regla de negocio: Uno de los médicos asignados a esta guardia ya tiene otra guardia en la nueva fecha y turno.');
-            END IF;
-
-            -- 2. Validar que ningún médico asignado esté de vacaciones en la nueva fecha
-            SELECT COUNT(*) INTO v_vac_cant
-            FROM CUBIERTA_POR cp
-            JOIN VACACION v ON cp.numero_de_matricula = v.numero_de_matricula
-            WHERE cp.id_guardia = g_filas(i).id_guardia
-              AND TRUNC(g_filas(i).fecha) >= TRUNC(v.fecha_inicio_vac)
-              AND (v.fecha_fin_vac IS NULL OR TRUNC(g_filas(i).fecha) <= TRUNC(v.fecha_fin_vac));
-
-            IF v_vac_cant > 0 THEN
-                RAISE_APPLICATION_ERROR(-20021, 'Regla de negocio: Uno de los médicos asignados a esta guardia se encuentra de vacaciones en la nueva fecha programada.');
-            END IF;
-        END LOOP;
-    END AFTER STATEMENT;
-END trg_validar_cambio_guardia;
+         if v_vac_cant > 0 then
+            raise_application_error(
+               -20021,
+               'Regla de negocio: Uno de los médicos asignados a esta guardia se encuentra de vacaciones en la nueva fecha programada.'
+            );
+         end if;
+      end loop;
+   end after statement;
+end trg_validar_cambio_guardia;
 /
 
 
-CREATE OR REPLACE TRIGGER trg_evitar_autoatencion
-BEFORE INSERT OR UPDATE ON INTERNACION
-FOR EACH ROW
-FOLLOWS trg_normalizar_dni_internacion
-DECLARE
-    v_dni_medico VARCHAR2(8);
-BEGIN
-    SELECT numero_de_DNI INTO v_dni_medico
-    FROM MEDICO
-    WHERE numero_de_matricula = :NEW.numero_de_matricula;
+-- PROPÓSITO: Impide que un médico sea registrado como el profesional a cargo de su propia internación.
+create or replace trigger trg_evitar_autoatencion before
+   insert or update on internacion
+   for each row
+follows trg_normalizar_dni_internacion declare
+   v_dni_medico varchar2(8);
+begin
+   select numero_de_dni
+     into v_dni_medico
+     from medico
+    where numero_de_matricula = :new.numero_de_matricula;
 
-   IF v_dni_medico = :NEW.numero_de_DNI THEN
-        RAISE_APPLICATION_ERROR(-20008, 'Regla de negocio: Un médico no puede ser el profesional a cargo de su propia internación.');
-    END IF;
-END;
+   if v_dni_medico = :new.numero_de_dni then
+      raise_application_error(
+         -20008,
+         'Regla de negocio: Un médico no puede ser el profesional a cargo de su propia internación.'
+      );
+   end if;
+end;
 /
--- Regla de negocio: Evitar internaciones con fechas superpuestas para el mismo paciente
--- (la unicidad de internación activa se garantiza mediante el índice uq_paciente_int_activa;
--- este trigger a nivel de sentencia permite cargar internaciones históricas ya finalizadas).
-CREATE OR REPLACE TRIGGER trg_evitar_internacion_multiple
-AFTER INSERT OR UPDATE ON INTERNACION
-DECLARE
-    v_dni INTERNACION.numero_de_DNI%TYPE;
-BEGIN
-    BEGIN
-        SELECT i1.numero_de_DNI
-        INTO v_dni
-        FROM INTERNACION i1
-        JOIN INTERNACION i2
-          ON i1.numero_de_DNI = i2.numero_de_DNI
-         AND i1.id_internacion < i2.id_internacion
-        WHERE (i1.fecha_fin IS NULL OR TRUNC(i2.fecha_inicio) < TRUNC(i1.fecha_fin))
-          AND (i2.fecha_fin IS NULL OR TRUNC(i1.fecha_inicio) < TRUNC(i2.fecha_fin))
-        FETCH FIRST 1 ROW ONLY;
+-- PROPÓSITO: Evita que las fechas de una internación se solapen o superpongan con otra internación del mismo paciente.
+create or replace trigger trg_evitar_internacion_multiple after
+   insert or update on internacion
+declare
+   v_dni internacion.numero_de_dni%type;
+begin
+   begin
+      select i1.numero_de_dni
+        into v_dni
+        from internacion i1
+        join internacion i2
+      on i1.numero_de_dni = i2.numero_de_dni
+         and i1.id_internacion < i2.id_internacion
+       where ( i1.fecha_fin is null
+          or trunc(i2.fecha_inicio) < trunc(i1.fecha_fin) )
+         and ( i2.fecha_fin is null
+          or trunc(i1.fecha_inicio) < trunc(i2.fecha_fin) )
+       fetch first 1 row only;
 
-        RAISE_APPLICATION_ERROR(-20054, 'Regla de negocio: Las fechas de la internación se superponen con otra internación ya registrada para el paciente (DNI ' || v_dni || ').');
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            NULL;
-    END;
-END;
+      raise_application_error(
+         -20054,
+         'Regla de negocio: Las fechas de la internación se superponen con otra internación ya registrada para el paciente (DNI '
+         || v_dni
+         || ').'
+      );
+   exception
+      when no_data_found then
+         null;
+   end;
+end;
 /
-CREATE OR REPLACE TRIGGER trg_validar_fecha_inicio_int
-BEFORE INSERT OR UPDATE ON INTERNACION
-FOR EACH ROW
-BEGIN
-    IF :NEW.fecha_inicio > SYSDATE THEN
-        RAISE_APPLICATION_ERROR(-20011, 'Regla de negocio: La fecha de inicio de la internación no puede ser mayor que la fecha del sistema (SYSDATE).');
-    END IF;
-END;
-/
-
--- Regla de negocio: Validar que un médico NO tenga guardias asignadas durante el período de vacaciones solicitado
-CREATE OR REPLACE TRIGGER trg_vacacion_medico_guardia
-BEFORE INSERT OR UPDATE ON VACACION
-FOR EACH ROW
-DECLARE
-    v_id_guardia    GUARDIA.id_guardia%TYPE;
-    v_turno_guardia GUARDIA.turno%TYPE;
-    v_fecha_guardia VARCHAR2(10);
-BEGIN
-    IF :NEW.fecha_inicio_vac IS NULL THEN
-        RETURN;
-    END IF;
-
-    BEGIN
-        SELECT g.id_guardia, g.turno, TO_CHAR(g.fecha, 'DD/MM/YYYY')
-        INTO v_id_guardia, v_turno_guardia, v_fecha_guardia
-        FROM CUBIERTA_POR cp
-        JOIN GUARDIA g ON cp.id_guardia = g.id_guardia
-        WHERE cp.numero_de_matricula = :NEW.numero_de_matricula
-          AND TRUNC(g.fecha) >= TRUNC(:NEW.fecha_inicio_vac)
-          AND (:NEW.fecha_fin_vac IS NULL OR TRUNC(g.fecha) <= TRUNC(:NEW.fecha_fin_vac))
-        FETCH FIRST 1 ROW ONLY;
-
-        RAISE_APPLICATION_ERROR(-20049, 'Regla de negocio: No se pueden registrar vacaciones para el médico ' || :NEW.numero_de_matricula || ' porque tiene asignada la guardia #' || v_id_guardia || ' (' || v_turno_guardia || ' del ' || v_fecha_guardia || ') en ese período. Debe reasignar o eliminar la guardia primero.');
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            NULL;
-    END;
-END;
+-- PROPÓSITO: Verifica que la fecha de inicio de una internación no sea posterior a la fecha actual del sistema.
+create or replace trigger trg_validar_fecha_inicio_int before
+   insert or update on internacion
+   for each row
+begin
+   if :new.fecha_inicio > sysdate then
+      raise_application_error(
+         -20011,
+         'Regla de negocio: La fecha de inicio de la internación no puede ser mayor que la fecha del sistema (SYSDATE).'
+      );
+   end if;
+end;
 /
 
--- Regla de negocio: Validar que un médico NO esté de vacaciones en la fecha del recorrido
-CREATE OR REPLACE TRIGGER trg_recorrido_medico_vacaciones
-BEFORE INSERT OR UPDATE OF numero_de_matricula, fecha ON RECORRIDO
-FOR EACH ROW
-DECLARE
-    v_ini_vac VARCHAR2(10);
-    v_fin_vac VARCHAR2(10);
-BEGIN
-    BEGIN
-        SELECT TO_CHAR(fecha_inicio_vac, 'DD/MM/YYYY'), TO_CHAR(fecha_fin_vac, 'DD/MM/YYYY')
-        INTO v_ini_vac, v_fin_vac
-        FROM VACACION
-        WHERE numero_de_matricula = :NEW.numero_de_matricula
-          AND TRUNC(:NEW.fecha) >= TRUNC(fecha_inicio_vac)
-          AND (fecha_fin_vac IS NULL OR TRUNC(:NEW.fecha) <= TRUNC(fecha_fin_vac))
-        FETCH FIRST 1 ROW ONLY;
+-- PROPÓSITO: Impide que un médico registre vacaciones si ya tiene guardias asignadas dentro de ese rango de fechas.
+create or replace trigger trg_vacacion_medico_guardia before
+   insert or update on vacacion
+   for each row
+declare
+   v_id_guardia    guardia.id_guardia%type;
+   v_turno_guardia guardia.turno%type;
+   v_fecha_guardia varchar2(10);
+begin
+   if :new.fecha_inicio_vac is null then
+      return;
+   end if;
+   begin
+      select g.id_guardia,
+             g.turno,
+             to_char(
+                g.fecha,
+                'DD/MM/YYYY'
+             )
+        into
+         v_id_guardia,
+         v_turno_guardia,
+         v_fecha_guardia
+        from cubierta_por cp
+        join guardia g
+      on cp.id_guardia = g.id_guardia
+       where cp.numero_de_matricula = :new.numero_de_matricula
+         and trunc(g.fecha) >= trunc(:new.fecha_inicio_vac)
+         and ( :new.fecha_fin_vac is null
+          or trunc(g.fecha) <= trunc(:new.fecha_fin_vac) )
+       fetch first 1 row only;
 
-        RAISE_APPLICATION_ERROR(-20052, 'Regla de negocio: El médico ' || :NEW.numero_de_matricula || ' se encuentra de vacaciones en la fecha del recorrido (' || TO_CHAR(:NEW.fecha, 'DD/MM/YYYY') || '). Período de vacaciones: del ' || v_ini_vac || ' al ' || NVL(v_fin_vac, 'indefinido') || '.');
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            NULL;
-    END;
-END;
+      raise_application_error(
+         -20049,
+         'Regla de negocio: No se pueden registrar vacaciones para el médico '
+         || :new.numero_de_matricula
+         || ' porque tiene asignada la guardia #'
+         || v_id_guardia
+         || ' ('
+         || v_turno_guardia
+         || ' del '
+         || v_fecha_guardia
+         || ') en ese período. Debe reasignar o eliminar la guardia primero.'
+      );
+   exception
+      when no_data_found then
+         null;
+   end;
+end;
 /
 
--- Regla de negocio: Validar que un médico NO tenga recorridos asignados durante el período de vacaciones solicitado
-CREATE OR REPLACE TRIGGER trg_vacacion_medico_recorrido
-BEFORE INSERT OR UPDATE ON VACACION
-FOR EACH ROW
-DECLARE
-    v_id_rec    RECORRIDO.id_recorrido%TYPE;
-    v_fecha_rec VARCHAR2(10);
-BEGIN
-    IF :NEW.fecha_inicio_vac IS NULL THEN
-        RETURN;
-    END IF;
+-- PROPÓSITO: Impide asignar un recorrido de ronda a un médico si la fecha coincide con sus vacaciones.
+create or replace trigger trg_recorrido_medico_vacaciones before
+   insert or update of numero_de_matricula,fecha on recorrido
+   for each row
+declare
+   v_ini_vac varchar2(10);
+   v_fin_vac varchar2(10);
+begin
+   begin
+      select to_char(
+         fecha_inicio_vac,
+         'DD/MM/YYYY'
+      ),
+             to_char(
+                fecha_fin_vac,
+                'DD/MM/YYYY'
+             )
+        into
+         v_ini_vac,
+         v_fin_vac
+        from vacacion
+       where numero_de_matricula = :new.numero_de_matricula
+         and trunc(:new.fecha) >= trunc(fecha_inicio_vac)
+         and ( fecha_fin_vac is null
+          or trunc(:new.fecha) <= trunc(fecha_fin_vac) )
+       fetch first 1 row only;
 
-    BEGIN
-        SELECT id_recorrido, TO_CHAR(fecha, 'DD/MM/YYYY')
-        INTO v_id_rec, v_fecha_rec
-        FROM RECORRIDO
-        WHERE numero_de_matricula = :NEW.numero_de_matricula
-          AND TRUNC(fecha) >= TRUNC(:NEW.fecha_inicio_vac)
-          AND (:NEW.fecha_fin_vac IS NULL OR TRUNC(fecha) <= TRUNC(:NEW.fecha_fin_vac))
-        FETCH FIRST 1 ROW ONLY;
-
-        RAISE_APPLICATION_ERROR(-20053, 'Regla de negocio: No se pueden registrar vacaciones para el médico ' || :NEW.numero_de_matricula || ' porque tiene asignado el recorrido #' || v_id_rec || ' (' || v_fecha_rec || ') en ese período.');
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            NULL;
-    END;
-END;
+      raise_application_error(
+         -20052,
+         'Regla de negocio: El médico '
+         || :new.numero_de_matricula
+         || ' se encuentra de vacaciones en la fecha del recorrido ('
+         || to_char(
+            :new.fecha,
+            'DD/MM/YYYY'
+         )
+         || '). Período de vacaciones: del '
+         || v_ini_vac
+         || ' al '
+         || nvl(
+            v_fin_vac,
+            'indefinido'
+         )
+         || '.'
+      );
+   exception
+      when no_data_found then
+         null;
+   end;
+end;
 /
 
--- [PROVISORIO - A DEFINIR SI QUEDA DEFINITIVO]
--- Regla de negocio: Validar que el día de la semana de RECORRIDO.fecha coincida con RONDA.dia_semana
-CREATE OR REPLACE TRIGGER trg_recorrido_dia_ronda
-BEFORE INSERT OR UPDATE OF fecha, id_ronda ON RECORRIDO
-FOR EACH ROW
-DECLARE
-    v_dia_ronda RONDA.dia_semana%TYPE;
-    v_dia_fecha VARCHAR2(15);
-BEGIN
-    IF :NEW.fecha IS NULL OR :NEW.id_ronda IS NULL THEN
-        RETURN;
-    END IF;
+-- PROPÓSITO: Impide programar vacaciones a un médico si ya tiene recorridos asignados en ese período.
+create or replace trigger trg_vacacion_medico_recorrido before
+   insert or update on vacacion
+   for each row
+declare
+   v_id_rec    recorrido.id_recorrido%type;
+   v_fecha_rec varchar2(10);
+begin
+   if :new.fecha_inicio_vac is null then
+      return;
+   end if;
+   begin
+      select id_recorrido,
+             to_char(
+                fecha,
+                'DD/MM/YYYY'
+             )
+        into
+         v_id_rec,
+         v_fecha_rec
+        from recorrido
+       where numero_de_matricula = :new.numero_de_matricula
+         and trunc(fecha) >= trunc(:new.fecha_inicio_vac)
+         and ( :new.fecha_fin_vac is null
+          or trunc(fecha) <= trunc(:new.fecha_fin_vac) )
+       fetch first 1 row only;
 
-    BEGIN
-        SELECT UPPER(TRIM(dia_semana))
-        INTO v_dia_ronda
-        FROM RONDA
-        WHERE id_ronda = :NEW.id_ronda;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RETURN;
-    END;
-
-    v_dia_fecha := CASE TRUNC(:NEW.fecha) - TRUNC(:NEW.fecha, 'IW')
-        WHEN 0 THEN 'LUNES'
-        WHEN 1 THEN 'MARTES'
-        WHEN 2 THEN 'MIERCOLES'
-        WHEN 3 THEN 'JUEVES'
-        WHEN 4 THEN 'VIERNES'
-        WHEN 5 THEN 'SABADO'
-        WHEN 6 THEN 'DOMINGO'
-    END;
-
-    IF v_dia_fecha != v_dia_ronda THEN
-        RAISE_APPLICATION_ERROR(-20055, 'Regla de negocio: La fecha del recorrido (' || TO_CHAR(:NEW.fecha, 'DD/MM/YYYY') || ', ' || v_dia_fecha || ') no coincide con el día programado para la ronda #' || :NEW.id_ronda || ' (' || v_dia_ronda || ').');
-    END IF;
-END;
+      raise_application_error(
+         -20053,
+         'Regla de negocio: No se pueden registrar vacaciones para el médico '
+         || :new.numero_de_matricula
+         || ' porque tiene asignado el recorrido #'
+         || v_id_rec
+         || ' ('
+         || v_fecha_rec
+         || ') en ese período.'
+      );
+   exception
+      when no_data_found then
+         null;
+   end;
+end;
 /
 
--- [PROVISORIO - A DEFINIR SI QUEDA DEFINITIVO]
--- Regla de negocio: Impedir cambiar el día de una RONDA si ya tiene recorridos registrados en otro día
-CREATE OR REPLACE TRIGGER trg_ronda_dia_recorridos
-BEFORE UPDATE OF dia_semana ON RONDA
-FOR EACH ROW
-DECLARE
-    v_nuevo_dia RONDA.dia_semana%TYPE;
-    v_id_rec    RECORRIDO.id_recorrido%TYPE;
-    v_fecha_rec VARCHAR2(10);
-BEGIN
-    IF :NEW.dia_semana IS NULL THEN
-        RETURN;
-    END IF;
+-- PROPÓSITO: Asegura que el día de la semana de la fecha del recorrido coincida exactamente con el día establecido para esa ronda.
+create or replace trigger trg_recorrido_dia_ronda before
+   insert or update of fecha,id_ronda on recorrido
+   for each row
+declare
+   v_dia_ronda ronda.dia_semana%type;
+   v_dia_fecha varchar2(15);
+begin
+   if :new.fecha is null
+   or :new.id_ronda is null then
+      return;
+   end if;
 
-    v_nuevo_dia := UPPER(TRIM(:NEW.dia_semana));
-    IF :OLD.dia_semana IS NOT NULL AND v_nuevo_dia = UPPER(TRIM(:OLD.dia_semana)) THEN
-        RETURN;
-    END IF;
+   begin
+      select upper(trim(dia_semana))
+        into v_dia_ronda
+        from ronda
+       where id_ronda = :new.id_ronda;
+   exception
+      when no_data_found then
+         return;
+   end;
 
-    BEGIN
-        SELECT id_recorrido, TO_CHAR(fecha, 'DD/MM/YYYY')
-        INTO v_id_rec, v_fecha_rec
-        FROM RECORRIDO
-        WHERE id_ronda = :NEW.id_ronda
-          AND (CASE TRUNC(fecha) - TRUNC(fecha, 'IW')
-                   WHEN 0 THEN 'LUNES'
-                   WHEN 1 THEN 'MARTES'
-                   WHEN 2 THEN 'MIERCOLES'
-                   WHEN 3 THEN 'JUEVES'
-                   WHEN 4 THEN 'VIERNES'
-                   WHEN 5 THEN 'SABADO'
-                   WHEN 6 THEN 'DOMINGO'
-               END) != v_nuevo_dia
-        FETCH FIRST 1 ROW ONLY;
+   v_dia_fecha :=
+      case trunc(:new.fecha) - trunc(
+         :new.fecha,
+         'IW'
+      )
+         when 0 then
+            'LUNES'
+         when 1 then
+            'MARTES'
+         when 2 then
+            'MIERCOLES'
+         when 3 then
+            'JUEVES'
+         when 4 then
+            'VIERNES'
+         when 5 then
+            'SABADO'
+         when 6 then
+            'DOMINGO'
+      end;
 
-        RAISE_APPLICATION_ERROR(-20056, 'Regla de negocio: No se puede cambiar el día de la ronda #' || :NEW.id_ronda || ' a ' || v_nuevo_dia || ' porque ya tiene el recorrido #' || v_id_rec || ' registrado el ' || v_fecha_rec || '.');
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            NULL;
-    END;
-END;
+   if v_dia_fecha != v_dia_ronda then
+      raise_application_error(
+         -20055,
+         'Regla de negocio: La fecha del recorrido ('
+         || to_char(
+            :new.fecha,
+            'DD/MM/YYYY'
+         )
+         || ', '
+         || v_dia_fecha
+         || ') no coincide con el día programado para la ronda #'
+         || :new.id_ronda
+         || ' ('
+         || v_dia_ronda
+         || ').'
+      );
+   end if;
+end;
 /
 
-CREATE OR REPLACE TRIGGER trg_comentario_ronda
-BEFORE INSERT OR UPDATE ON COMENTARIO
-FOR EACH ROW
-DECLARE
-    v_id_ronda NUMBER(7);
-    v_id_habitacion NUMBER(7);
-    v_pertenece NUMBER;
-    v_fecha_fin DATE;
-BEGIN
-    -- 1. Validar que la internación no esté finalizada
-    SELECT fecha_fin INTO v_fecha_fin
-    FROM INTERNACION
-    WHERE id_internacion = :NEW.id_internacion;
+-- PROPÓSITO: Impide cambiar el día de una ronda si ya tiene recorridos médicos registrados con el día anterior.
+create or replace trigger trg_ronda_dia_recorridos before
+   update of dia_semana on ronda
+   for each row
+declare
+   v_nuevo_dia ronda.dia_semana%type;
+   v_id_rec    recorrido.id_recorrido%type;
+   v_fecha_rec varchar2(10);
+begin
+   if :new.dia_semana is null then
+      return;
+   end if;
+   v_nuevo_dia := upper(trim(:new.dia_semana));
+   if
+      :old.dia_semana is not null
+      and v_nuevo_dia = upper(trim(:old.dia_semana))
+   then
+      return;
+   end if;
 
-    IF v_fecha_fin IS NOT NULL THEN
-        RAISE_APPLICATION_ERROR(-20012, 'Regla de negocio: No se pueden agregar comentarios a una internación finalizada (con alta médica).');
-    END IF;
+   begin
+      select id_recorrido,
+             to_char(
+                fecha,
+                'DD/MM/YYYY'
+             )
+        into
+         v_id_rec,
+         v_fecha_rec
+        from recorrido
+       where id_ronda = :new.id_ronda
+         and (
+         case trunc(fecha) - trunc(
+            fecha,
+            'IW'
+         )
+            when 0 then
+               'LUNES'
+            when 1 then
+               'MARTES'
+            when 2 then
+               'MIERCOLES'
+            when 3 then
+               'JUEVES'
+            when 4 then
+               'VIERNES'
+            when 5 then
+               'SABADO'
+            when 6 then
+               'DOMINGO'
+         end
+      ) != v_nuevo_dia
+       fetch first 1 row only;
 
-    -- 2. Obtener la ronda del recorrido
-    SELECT id_ronda INTO v_id_ronda
-    FROM RECORRIDO
-    WHERE id_recorrido = :NEW.id_recorrido;
+      raise_application_error(
+         -20056,
+         'Regla de negocio: No se puede cambiar el día de la ronda #'
+         || :new.id_ronda
+         || ' a '
+         || v_nuevo_dia
+         || ' porque ya tiene el recorrido #'
+         || v_id_rec
+         || ' registrado el '
+         || v_fecha_rec
+         || '.'
+      );
+   exception
+      when no_data_found then
+         null;
+   end;
+end;
+/
 
-    -- 3. Obtener la habitación actual del paciente internado (última registrada en POSEE)
-    BEGIN
-        SELECT id_habitacion INTO v_id_habitacion
-        FROM (
-            SELECT id_habitacion
-            FROM POSEE
-            WHERE id_internacion = :NEW.id_internacion
-            ORDER BY fechaHora DESC
-        )
-        WHERE ROWNUM = 1;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20013, 'Regla de negocio: La internación no tiene una habitación asignada en POSEE.');
-    END;
+-- PROPÓSITO: Verifica que los comentarios de un recorrido solo puedan hacerse sobre pacientes cuyas habitaciones pertenezcan a la ronda realizada.
+create or replace trigger trg_comentario_ronda before
+   insert or update on comentario
+   for each row
+declare
+   v_id_ronda      number(7);
+   v_id_habitacion number(7);
+   v_pertenece     number;
+   v_fecha_fin     date;
+begin
+   select fecha_fin
+     into v_fecha_fin
+     from internacion
+    where id_internacion = :new.id_internacion;
 
-    -- 4. Verificar si la habitación pertenece a la ronda del recorrido (COMPUESTA_POR)
-    SELECT COUNT(*) INTO v_pertenece
-    FROM COMPUESTA_POR
-    WHERE id_ronda = v_id_ronda
-      AND id_habitacion = v_id_habitacion;
+   if v_fecha_fin is not null then
+      raise_application_error(
+         -20012,
+         'Regla de negocio: No se pueden agregar comentarios a una internación finalizada (con alta médica).'
+      );
+   end if;
+   select id_ronda
+     into v_id_ronda
+     from recorrido
+    where id_recorrido = :new.id_recorrido;
 
-    IF v_pertenece = 0 THEN
-        RAISE_APPLICATION_ERROR(-20014, 'Regla de negocio: Solo se pueden hacer comentarios de internaciones cuyas habitaciones estén en su ronda.');
-    END IF;
-END;
+   begin
+      select id_habitacion
+        into v_id_habitacion
+        from (
+         select id_habitacion
+           from posee
+          where id_internacion = :new.id_internacion
+          order by fechahora desc
+      )
+       where rownum = 1;
+   exception
+      when no_data_found then
+         raise_application_error(
+            -20013,
+            'Regla de negocio: La internación no tiene una habitación asignada en POSEE.'
+         );
+   end;
+
+   select count(*)
+     into v_pertenece
+     from compuesta_por
+    where id_ronda = v_id_ronda
+      and id_habitacion = v_id_habitacion;
+
+   if v_pertenece = 0 then
+      raise_application_error(
+         -20014,
+         'Regla de negocio: Solo se pueden hacer comentarios de internaciones cuyas habitaciones estén en su ronda.'
+      );
+   end if;
+end;
 /
 
 
@@ -1036,942 +1452,1442 @@ END;
 -- STORED PROCEDURES DE NEGOCIO (TRANSACCIONES ATOMICAS Y SEPARACION EN BACKEND)
 -- ==============================================================================
 
--- 1. Registrar paciente en PERSONA y PACIENTE
-CREATE OR REPLACE PROCEDURE sp_registrar_paciente (
-    p_dni               IN VARCHAR2,
-    p_nombre            IN VARCHAR2,
-    p_apellido          IN VARCHAR2,
-    p_sexo              IN VARCHAR2,
-    p_fecha_nacimiento  IN DATE
-) AS
-    v_existe NUMBER;
-    v_dni    VARCHAR2(100);
-BEGIN
-    IF p_dni IS NULL OR p_nombre IS NULL OR p_apellido IS NULL OR p_sexo IS NULL OR p_fecha_nacimiento IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20025, 'Regla de negocio: Todos los datos del paciente son obligatorios.');
-    END IF;
+-- PROPÓSITO: Registra a un nuevo paciente en el sistema, creando o actualizando su información de persona y paciente.
+create or replace procedure sp_registrar_paciente (
+   p_dni              in varchar2,
+   p_nombre           in varchar2,
+   p_apellido         in varchar2,
+   p_sexo             in varchar2,
+   p_fecha_nacimiento in date
+) as
+   v_existe number;
+   v_dni    varchar2(100);
+begin
+   if p_dni is null
+   or p_nombre is null
+   or p_apellido is null
+   or p_sexo is null
+   or p_fecha_nacimiento is null then
+      raise_application_error(
+         -20025,
+         'Regla de negocio: Todos los datos del paciente son obligatorios.'
+      );
+   end if;
 
-    v_dni := TRIM(p_dni);
-    IF REGEXP_LIKE(v_dni, '^[0-9]{7}$') THEN
-        v_dni := LPAD(v_dni, 8, '0');
-    END IF;
-    IF NOT REGEXP_LIKE(v_dni, '^[0-9]{8}$') THEN
-        RAISE_APPLICATION_ERROR(-20050, 'Regla de negocio: El número de DNI debe contener 7 u 8 dígitos numéricos.');
-    END IF;
+   v_dni := trim(p_dni);
+   if regexp_like(
+      v_dni,
+      '^[0-9]{7}$'
+   ) then
+      v_dni := lpad(
+         v_dni,
+         8,
+         '0'
+      );
+   end if;
+   if not regexp_like(
+      v_dni,
+      '^[0-9]{8}$'
+   ) then
+      raise_application_error(
+         -20050,
+         'Regla de negocio: El número de DNI debe contener 7 u 8 dígitos numéricos.'
+      );
+   end if;
 
-    IF UPPER(p_sexo) NOT IN ('MASCULINO', 'FEMENINO', 'OTRO') THEN
-        RAISE_APPLICATION_ERROR(-20026, 'Regla de negocio: El sexo del paciente debe ser MASCULINO, FEMENINO u OTRO.');
-    END IF;
+   if upper(p_sexo) not in ( 'MASCULINO',
+                             'FEMENINO',
+                             'OTRO' ) then
+      raise_application_error(
+         -20026,
+         'Regla de negocio: El sexo del paciente debe ser MASCULINO, FEMENINO u OTRO.'
+      );
+   end if;
 
-    IF TRUNC(p_fecha_nacimiento) > TRUNC(SYSDATE) THEN
-        RAISE_APPLICATION_ERROR(-20027, 'Regla de negocio: La fecha de nacimiento no puede ser posterior a la fecha actual.');
-    END IF;
+   if trunc(p_fecha_nacimiento) > trunc(sysdate) then
+      raise_application_error(
+         -20027,
+         'Regla de negocio: La fecha de nacimiento no puede ser posterior a la fecha actual.'
+      );
+   end if;
 
-    SELECT COUNT(*) INTO v_existe FROM PERSONA WHERE numero_de_DNI = v_dni;
-    IF v_existe = 0 THEN
-        INSERT INTO PERSONA (numero_de_DNI, nombre, apellido, rol)
-        VALUES (v_dni, p_nombre, p_apellido, 'PACIENTE');
-    ELSE
-        -- Si la persona ya existía (por ejemplo, registrada previamente como médico con rol NULL),
-        -- al registrarse como paciente su discriminador en PERSONA pasa a ser 'PACIENTE':
-        UPDATE PERSONA
-        SET rol = 'PACIENTE'
-        WHERE numero_de_DNI = v_dni;
-    END IF;
+   select count(*)
+     into v_existe
+     from persona
+    where numero_de_dni = v_dni;
+   if v_existe = 0 then
+      insert into persona (
+         numero_de_dni,
+         nombre,
+         apellido,
+         rol
+      ) values
+         ( v_dni,
+           p_nombre,
+           p_apellido,
+           'PACIENTE' );
+   else
+      update persona
+         set
+         rol = 'PACIENTE'
+       where numero_de_dni = v_dni;
+   end if;
 
-    INSERT INTO PACIENTE (numero_de_DNI, sexo, fecha_de_nacimiento)
-    VALUES (v_dni, UPPER(p_sexo), p_fecha_nacimiento);
+   insert into paciente (
+      numero_de_dni,
+      sexo,
+      fecha_de_nacimiento
+   ) values
+      ( v_dni,
+        upper(p_sexo),
+        p_fecha_nacimiento );
 
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_registrar_paciente;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_registrar_paciente;
 /
 
--- 2. Registrar mÃ©dico en PERSONA y MEDICO (foto opcional)
-CREATE OR REPLACE PROCEDURE sp_registrar_medico (
-    p_dni            IN VARCHAR2,
-    p_nombre         IN VARCHAR2,
-    p_apellido       IN VARCHAR2,
-    p_matricula      IN VARCHAR2,
-    p_cuil           IN VARCHAR2,
-    p_guardias_max   IN NUMBER,
-    p_foto           IN BLOB DEFAULT NULL
-) AS
-    v_existe NUMBER;
-    v_dni    VARCHAR2(100);
-    v_cuil   VARCHAR2(100);
-BEGIN
-    IF p_dni IS NULL OR p_nombre IS NULL OR p_apellido IS NULL OR p_matricula IS NULL OR p_cuil IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20028, 'Regla de negocio: DNI, Nombre, Apellido, MatrÃ­cula y CUIL son obligatorios para registrar un mÃ©dico.');
-    END IF;
+-- PROPÓSITO: Registra a un médico en el sistema junto con su matrícula, documento, límite de guardias y foto.
+create or replace procedure sp_registrar_medico (
+   p_dni          in varchar2,
+   p_nombre       in varchar2,
+   p_apellido     in varchar2,
+   p_matricula    in varchar2,
+   p_cuil         in varchar2,
+   p_guardias_max in number,
+   p_foto         in blob default null
+) as
+   v_existe number;
+   v_dni    varchar2(100);
+   v_cuil   varchar2(100);
+begin
+   if p_dni is null
+   or p_nombre is null
+   or p_apellido is null
+   or p_matricula is null
+   or p_cuil is null then
+      raise_application_error(
+         -20028,
+         'Regla de negocio: DNI, Nombre, Apellido, MatrÃ­cula y CUIL son obligatorios para registrar un médico.'
+      );
+   end if;
 
-    v_dni := TRIM(p_dni);
-    IF REGEXP_LIKE(v_dni, '^[0-9]{7}$') THEN
-        v_dni := LPAD(v_dni, 8, '0');
-    END IF;
-    IF NOT REGEXP_LIKE(v_dni, '^[0-9]{8}$') THEN
-        RAISE_APPLICATION_ERROR(-20050, 'Regla de negocio: El número de DNI debe contener 7 u 8 dígitos numéricos.');
-    END IF;
+   v_dni := trim(p_dni);
+   if regexp_like(
+      v_dni,
+      '^[0-9]{7}$'
+   ) then
+      v_dni := lpad(
+         v_dni,
+         8,
+         '0'
+      );
+   end if;
+   if not regexp_like(
+      v_dni,
+      '^[0-9]{8}$'
+   ) then
+      raise_application_error(
+         -20050,
+         'Regla de negocio: El número de DNI debe contener 7 u 8 dígitos numéricos.'
+      );
+   end if;
 
-    v_cuil := TRIM(p_cuil);
-    IF NOT REGEXP_LIKE(v_cuil, '^[0-9]{11}$') THEN
-        RAISE_APPLICATION_ERROR(-20051, 'Regla de negocio: El CUIL debe contener exactamente 11 dígitos numéricos.');
-    END IF;
+   v_cuil := trim(p_cuil);
+   if not regexp_like(
+      v_cuil,
+      '^[0-9]{11}$'
+   ) then
+      raise_application_error(
+         -20051,
+         'Regla de negocio: El CUIL debe contener exactamente 11 dígitos numéricos.'
+      );
+   end if;
 
-    SELECT COUNT(*) INTO v_existe FROM PERSONA WHERE numero_de_DNI = v_dni;
-    IF v_existe = 0 THEN
-        INSERT INTO PERSONA (numero_de_DNI, nombre, apellido, rol)
-        VALUES (v_dni, p_nombre, p_apellido, NULL);
-    END IF;
+   select count(*)
+     into v_existe
+     from persona
+    where numero_de_dni = v_dni;
+   if v_existe = 0 then
+      insert into persona (
+         numero_de_dni,
+         nombre,
+         apellido,
+         rol
+      ) values
+         ( v_dni,
+           p_nombre,
+           p_apellido,
+           null );
+   end if;
 
-    INSERT INTO MEDICO (numero_de_matricula, CUIL, foto, guardias_max, fecha_ingreso, numero_de_DNI)
-    VALUES (p_matricula, v_cuil, p_foto, NVL(p_guardias_max, 0), SYSDATE, v_dni);
+   insert into medico (
+      numero_de_matricula,
+      cuil,
+      foto,
+      guardias_max,
+      fecha_ingreso,
+      numero_de_dni
+   ) values
+      ( p_matricula,
+        v_cuil,
+        p_foto,
+        nvl(
+           p_guardias_max,
+           0
+        ),
+        sysdate,
+        v_dni );
 
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_registrar_medico;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_registrar_medico;
 /
 
--- 3. Crear sector hospitalario
-CREATE OR REPLACE PROCEDURE sp_crear_sector (
-    p_nombre      IN VARCHAR2,
-    p_id_sector   OUT NUMBER
-) AS
-BEGIN
-    IF p_nombre IS NULL OR TRIM(p_nombre) IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20029, 'Regla de negocio: El nombre del sector no puede estar vacÃ­o.');
-    END IF;
+-- PROPÓSITO: Da de alta un nuevo sector hospitalario verificando que su nombre no esté repetido.
+create or replace procedure sp_crear_sector (
+   p_nombre    in varchar2,
+   p_id_sector out number
+) as
+begin
+   if p_nombre is null
+   or trim(p_nombre) is null then
+      raise_application_error(
+         -20029,
+         'Regla de negocio: El nombre del sector no puede estar vacÃ­o.'
+      );
+   end if;
 
-    INSERT INTO SECTOR (nombre)
-    VALUES (TRIM(p_nombre))
-    RETURNING id_sector INTO p_id_sector;
+   insert into sector ( nombre ) values
+      ( trim(p_nombre) )
+   returning id_sector into p_id_sector;
 
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_crear_sector;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_crear_sector;
 /
 
--- 4. Crear habitaciÃ³n y asociar las rondas semanales (Lunes a Domingo)
-CREATE OR REPLACE PROCEDURE sp_crear_habitacion_con_rondas (
-    p_piso           IN VARCHAR2,
-    p_orientacion    IN VARCHAR2,
-    p_id_sector      IN NUMBER,
-    p_turno_lun      IN NUMBER,
-    p_turno_mar      IN NUMBER,
-    p_turno_mie      IN NUMBER,
-    p_turno_jue      IN NUMBER,
-    p_turno_vie      IN NUMBER,
-    p_turno_sab      IN NUMBER,
-    p_turno_dom      IN NUMBER,
-    p_id_habitacion  OUT NUMBER
-) AS
-    TYPE t_dia_turno IS RECORD (
-        dia VARCHAR2(15),
-        turno NUMBER(1)
-    );
-    TYPE t_semana IS TABLE OF t_dia_turno INDEX BY PLS_INTEGER;
-    v_semana t_semana;
-    v_id_ronda NUMBER(7);
-BEGIN
-    IF p_piso IS NULL OR p_orientacion IS NULL OR p_id_sector IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20030, 'Regla de negocio: Piso, orientaciÃ³n y sector son requeridos para la habitaciÃ³n.');
-    END IF;
+-- PROPÓSITO: Crea una habitación dentro de un sector y le asocia automáticamente las rondas semanales de revisión.
+create or replace procedure sp_crear_habitacion_con_rondas (
+   p_piso          in varchar2,
+   p_orientacion   in varchar2,
+   p_id_sector     in number,
+   p_turno_lun     in number,
+   p_turno_mar     in number,
+   p_turno_mie     in number,
+   p_turno_jue     in number,
+   p_turno_vie     in number,
+   p_turno_sab     in number,
+   p_turno_dom     in number,
+   p_id_habitacion out number
+) as
+   type t_dia_turno is record (
+         dia   varchar2(15),
+         turno number(1)
+   );
+   type t_semana is
+      table of t_dia_turno index by pls_integer;
+   v_semana   t_semana;
+   v_id_ronda number(7);
+begin
+   if p_piso is null
+   or p_orientacion is null
+   or p_id_sector is null then
+      raise_application_error(
+         -20030,
+         'Regla de negocio: Piso, orientaciÃ³n y sector son requeridos para la habitaciÃ³n.'
+      );
+   end if;
 
-    INSERT INTO HABITACION (piso, orientacion, id_sector)
-    VALUES (p_piso, UPPER(p_orientacion), p_id_sector)
-    RETURNING id_habitacion INTO p_id_habitacion;
+   insert into habitacion (
+      piso,
+      orientacion,
+      id_sector
+   ) values
+      ( p_piso,
+        upper(p_orientacion),
+        p_id_sector )
+   returning id_habitacion into p_id_habitacion;
 
-    v_semana(1).dia := 'LUNES';     v_semana(1).turno := p_turno_lun;
-    v_semana(2).dia := 'MARTES';    v_semana(2).turno := p_turno_mar;
-    v_semana(3).dia := 'MIERCOLES'; v_semana(3).turno := p_turno_mie;
-    v_semana(4).dia := 'JUEVES';    v_semana(4).turno := p_turno_jue;
-    v_semana(5).dia := 'VIERNES';   v_semana(5).turno := p_turno_vie;
-    v_semana(6).dia := 'SABADO';    v_semana(6).turno := p_turno_sab;
-    v_semana(7).dia := 'DOMINGO';   v_semana(7).turno := p_turno_dom;
+   v_semana(1).dia := 'LUNES';
+   v_semana(1).turno := p_turno_lun;
+   v_semana(2).dia := 'MARTES';
+   v_semana(2).turno := p_turno_mar;
+   v_semana(3).dia := 'MIERCOLES';
+   v_semana(3).turno := p_turno_mie;
+   v_semana(4).dia := 'JUEVES';
+   v_semana(4).turno := p_turno_jue;
+   v_semana(5).dia := 'VIERNES';
+   v_semana(5).turno := p_turno_vie;
+   v_semana(6).dia := 'SABADO';
+   v_semana(6).turno := p_turno_sab;
+   v_semana(7).dia := 'DOMINGO';
+   v_semana(7).turno := p_turno_dom;
+   for i in 1..7 loop
+      begin
+         select id_ronda
+           into v_id_ronda
+           from ronda
+          where dia_semana = v_semana(i).dia
+            and turno = v_semana(i).turno;
+      exception
+         when no_data_found then
+            insert into ronda (
+               dia_semana,
+               turno
+            ) values
+               ( v_semana(i).dia,
+                 v_semana(i).turno )
+            returning id_ronda into v_id_ronda;
+      end;
 
-    FOR i IN 1..7 LOOP
-        BEGIN
-            SELECT id_ronda INTO v_id_ronda
-            FROM RONDA
-            WHERE dia_semana = v_semana(i).dia
-              AND turno = v_semana(i).turno;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                INSERT INTO RONDA (dia_semana, turno)
-                VALUES (v_semana(i).dia, v_semana(i).turno)
-                RETURNING id_ronda INTO v_id_ronda;
-        END;
+      insert into compuesta_por (
+         id_ronda,
+         id_habitacion
+      ) values
+         ( v_id_ronda,
+           p_id_habitacion );
+   end loop;
 
-        INSERT INTO COMPUESTA_POR (id_ronda, id_habitacion)
-        VALUES (v_id_ronda, p_id_habitacion);
-    END LOOP;
-
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_crear_habitacion_con_rondas;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_crear_habitacion_con_rondas;
 /
 
--- 5. Crear cama en una habitaciÃ³n
-CREATE OR REPLACE PROCEDURE sp_crear_cama (
-    p_id_habitacion IN NUMBER,
-    p_nro_cama      IN NUMBER,
-    p_estado        IN VARCHAR2 DEFAULT 'LIBRE'
-) AS
-BEGIN
-    IF p_id_habitacion IS NULL OR p_nro_cama IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20031, 'Regla de negocio: ID de habitaciÃ³n y nÃºmero de cama son obligatorios.');
-    END IF;
+-- PROPÓSITO: Agrega una nueva cama a una habitación dejándola en estado libre.
+create or replace procedure sp_crear_cama (
+   p_id_habitacion in number,
+   p_nro_cama      in number,
+   p_estado        in varchar2 default 'LIBRE'
+) as
+begin
+   if p_id_habitacion is null
+   or p_nro_cama is null then
+      raise_application_error(
+         -20031,
+         'Regla de negocio: ID de habitaciÃ³n y nÃºmero de cama son obligatorios.'
+      );
+   end if;
 
-    INSERT INTO CAMA (id_habitacion, nro_cama, estado)
-    VALUES (p_id_habitacion, p_nro_cama, UPPER(NVL(p_estado, 'LIBRE')));
+   insert into cama (
+      id_habitacion,
+      nro_cama,
+      estado
+   ) values
+      ( p_id_habitacion,
+        p_nro_cama,
+        upper(nvl(
+           p_estado,
+           'LIBRE'
+        )) );
 
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_crear_cama;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_crear_cama;
 /
 
--- 6. Registrar internación (histórica o activa con asignación inicial de cama)
-CREATE OR REPLACE PROCEDURE sp_registrar_internacion (
-    p_dni             IN VARCHAR2,
-    p_matricula       IN VARCHAR2,
-    p_id_habitacion   IN NUMBER,
-    p_nro_cama        IN NUMBER,
-    p_fecha_inicio    IN DATE,
-    p_fecha_fin       IN DATE,
-    p_id_internacion  OUT NUMBER,
-    p_fecha_hora      IN TIMESTAMP DEFAULT NULL
-) AS
-    v_dni_medico VARCHAR2(8);
-    v_estado_cama VARCHAR2(8);
-    v_cant NUMBER;
-    v_fecha_hora TIMESTAMP;
-    v_dni VARCHAR2(100);
-BEGIN
-    IF p_dni IS NULL OR p_matricula IS NULL OR p_id_habitacion IS NULL OR p_nro_cama IS NULL OR p_fecha_inicio IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20032, 'Regla de negocio: Paciente, Médico, Habitación, Cama y Fecha de Inicio son obligatorios.');
-    END IF;
+-- PROPÓSITO: Registra una internación para un paciente, asignándole un médico a cargo y una cama disponible si es activa.
+create or replace procedure sp_registrar_internacion (
+   p_dni            in varchar2,
+   p_matricula      in varchar2,
+   p_id_habitacion  in number,
+   p_nro_cama       in number,
+   p_fecha_inicio   in date,
+   p_fecha_fin      in date,
+   p_id_internacion out number,
+   p_fecha_hora     in timestamp default null
+) as
+   v_dni_medico  varchar2(8);
+   v_estado_cama varchar2(8);
+   v_cant        number;
+   v_fecha_hora  timestamp;
+   v_dni         varchar2(100);
+begin
+   if p_dni is null
+   or p_matricula is null
+   or p_id_habitacion is null
+   or p_nro_cama is null
+   or p_fecha_inicio is null then
+      raise_application_error(
+         -20032,
+         'Regla de negocio: Paciente, Médico, Habitación, Cama y Fecha de Inicio son obligatorios.'
+      );
+   end if;
 
-    v_dni := TRIM(p_dni);
-    IF REGEXP_LIKE(v_dni, '^[0-9]{7}$') THEN
-        v_dni := LPAD(v_dni, 8, '0');
-    END IF;
-    IF NOT REGEXP_LIKE(v_dni, '^[0-9]{8}$') THEN
-        RAISE_APPLICATION_ERROR(-20050, 'Regla de negocio: El número de DNI debe contener 7 u 8 dígitos numéricos.');
-    END IF;
+   v_dni := trim(p_dni);
+   if regexp_like(
+      v_dni,
+      '^[0-9]{7}$'
+   ) then
+      v_dni := lpad(
+         v_dni,
+         8,
+         '0'
+      );
+   end if;
+   if not regexp_like(
+      v_dni,
+      '^[0-9]{8}$'
+   ) then
+      raise_application_error(
+         -20050,
+         'Regla de negocio: El número de DNI debe contener 7 u 8 dígitos numéricos.'
+      );
+   end if;
 
-    v_fecha_hora := NVL(p_fecha_hora, CAST(p_fecha_inicio AS TIMESTAMP));
+   v_fecha_hora := nvl(
+      p_fecha_hora,
+      cast(p_fecha_inicio as timestamp)
+   );
+   if trunc(p_fecha_inicio) > trunc(sysdate)
+   or v_fecha_hora > systimestamp then
+      raise_application_error(
+         -20011,
+         'Regla de negocio: La fecha/hora de inicio de la internación no puede ser mayor que la fecha/hora actual del sistema (SYSDATE).'
+      );
+   end if;
 
-    IF TRUNC(p_fecha_inicio) > TRUNC(SYSDATE) OR v_fecha_hora > SYSTIMESTAMP THEN
-        RAISE_APPLICATION_ERROR(-20011, 'Regla de negocio: La fecha/hora de inicio de la internación no puede ser mayor que la fecha/hora actual del sistema (SYSDATE).');
-    END IF;
+   if
+      p_fecha_fin is not null
+      and trunc(p_fecha_fin) < trunc(p_fecha_inicio)
+   then
+      raise_application_error(
+         -20033,
+         'Regla de negocio: La fecha de fin (alta) no puede ser anterior a la fecha de inicio.'
+      );
+   end if;
 
-    IF p_fecha_fin IS NOT NULL AND TRUNC(p_fecha_fin) < TRUNC(p_fecha_inicio) THEN
-        RAISE_APPLICATION_ERROR(-20033, 'Regla de negocio: La fecha de fin (alta) no puede ser anterior a la fecha de inicio.');
-    END IF;
+   select count(*)
+     into v_cant
+     from paciente
+    where numero_de_dni = v_dni;
+   if v_cant = 0 then
+      raise_application_error(
+         -20034,
+         'Regla de negocio: El DNI '
+         || v_dni
+         || ' no corresponde a un paciente registrado.'
+      );
+   end if;
 
-    SELECT COUNT(*) INTO v_cant FROM PACIENTE WHERE numero_de_DNI = v_dni;
-    IF v_cant = 0 THEN
-        RAISE_APPLICATION_ERROR(-20034, 'Regla de negocio: El DNI ' || v_dni || ' no corresponde a un paciente registrado.');
-    END IF;
+   begin
+      select numero_de_dni
+        into v_dni_medico
+        from medico
+       where numero_de_matricula = p_matricula;
+   exception
+      when no_data_found then
+         raise_application_error(
+            -20035,
+            'Regla de negocio: La matrícula médica '
+            || p_matricula
+            || ' no existe en el sistema.'
+         );
+   end;
 
-    BEGIN
-        SELECT numero_de_DNI INTO v_dni_medico
-        FROM MEDICO
-        WHERE numero_de_matricula = p_matricula;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20035, 'Regla de negocio: La matrícula médica ' || p_matricula || ' no existe en el sistema.');
-    END;
+   if v_dni_medico = v_dni then
+      raise_application_error(
+         -20008,
+         'Regla de negocio: Un médico no puede ser el profesional a cargo de su propia internación.'
+      );
+   end if;
+   begin
+      select estado
+        into v_estado_cama
+        from cama
+       where id_habitacion = p_id_habitacion
+         and nro_cama = p_nro_cama
+      for update;
+   exception
+      when no_data_found then
+         raise_application_error(
+            -20017,
+            'Regla de negocio: La cama '
+            || p_nro_cama
+            || ' de la habitación '
+            || p_id_habitacion
+            || ' no existe en la base de datos.'
+         );
+   end;
 
-    IF v_dni_medico = v_dni THEN
-        RAISE_APPLICATION_ERROR(-20008, 'Regla de negocio: Un médico no puede ser el profesional a cargo de su propia internación.');
-    END IF;
+   if
+      p_fecha_fin is null
+      and upper(v_estado_cama) != 'LIBRE'
+   then
+      raise_application_error(
+         -20019,
+         'Regla de negocio: La cama (Habitación '
+         || p_id_habitacion
+         || ', Cama '
+         || p_nro_cama
+         || ') no está disponible (Estado actual: '
+         || v_estado_cama
+         || ').'
+      );
+   end if;
 
-    BEGIN
-        SELECT estado INTO v_estado_cama
-        FROM CAMA
-        WHERE id_habitacion = p_id_habitacion
-          AND nro_cama = p_nro_cama
-        FOR UPDATE;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20017, 'Regla de negocio: La cama ' || p_nro_cama || ' de la habitación ' || p_id_habitacion || ' no existe en la base de datos.');
-    END;
-
-    IF p_fecha_fin IS NULL AND UPPER(v_estado_cama) != 'LIBRE' THEN
-        RAISE_APPLICATION_ERROR(-20019, 'Regla de negocio: La cama (Habitación ' || p_id_habitacion || ', Cama ' || p_nro_cama || ') no está disponible (Estado actual: ' || v_estado_cama || ').');
-    END IF;
-
-    INSERT INTO INTERNACION (fecha_inicio, fecha_fin, numero_de_DNI, numero_de_matricula)
-    VALUES (
-        TRUNC(p_fecha_inicio),
-        CASE WHEN p_fecha_fin IS NOT NULL THEN TRUNC(p_fecha_fin) ELSE NULL END,
+   insert into internacion (
+      fecha_inicio,
+      fecha_fin,
+      numero_de_dni,
+      numero_de_matricula
+   ) values
+      ( trunc(p_fecha_inicio),
+        case
+           when p_fecha_fin is not null then
+               trunc(p_fecha_fin)
+           else
+              null
+        end,
         v_dni,
-        p_matricula
-    )
-    RETURNING id_internacion INTO p_id_internacion;
+        p_matricula )
+   returning id_internacion into p_id_internacion;
 
-    INSERT INTO POSEE (id_internacion, id_habitacion, nro_cama, fechaHora)
-    VALUES (p_id_internacion, p_id_habitacion, p_nro_cama, v_fecha_hora);
+   insert into posee (
+      id_internacion,
+      id_habitacion,
+      nro_cama,
+      fechahora
+   ) values
+      ( p_id_internacion,
+        p_id_habitacion,
+        p_nro_cama,
+        v_fecha_hora );
 
-    IF p_fecha_fin IS NULL THEN
-        UPDATE CAMA
-        SET estado = 'OCUPADA'
-        WHERE id_habitacion = p_id_habitacion
-          AND nro_cama = p_nro_cama;
-    END IF;
+   if p_fecha_fin is null then
+      update cama
+         set
+         estado = 'OCUPADA'
+       where id_habitacion = p_id_habitacion
+         and nro_cama = p_nro_cama;
+   end if;
 
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_registrar_internacion;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_registrar_internacion;
 /
 
--- 7. Dar alta mÃ©dica a una internaciÃ³n activa y liberar cama
-CREATE OR REPLACE PROCEDURE sp_dar_alta_internacion (
-    p_id_internacion IN NUMBER
-) AS
-    v_fecha_fin      DATE;
-    v_fecha_inicio   DATE;
-    v_id_hab         NUMBER(7);
-    v_nro_cama       NUMBER(1);
-BEGIN
-    BEGIN
-        SELECT fecha_inicio, fecha_fin
-        INTO v_fecha_inicio, v_fecha_fin
-        FROM INTERNACION
-        WHERE id_internacion = p_id_internacion
-        FOR UPDATE;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20018, 'Regla de negocio: La internaciÃ³n #' || p_id_internacion || ' no existe en la base de datos.');
-    END;
+-- PROPÓSITO: Finaliza una internación activa registrando la fecha de egreso y liberando la cama ocupada.
+create or replace procedure sp_dar_alta_internacion (
+   p_id_internacion in number
+) as
+   v_fecha_fin    date;
+   v_fecha_inicio date;
+   v_id_hab       number(7);
+   v_nro_cama     number(1);
+begin
+   begin
+      select fecha_inicio,
+             fecha_fin
+        into
+         v_fecha_inicio,
+         v_fecha_fin
+        from internacion
+       where id_internacion = p_id_internacion
+      for update;
+   exception
+      when no_data_found then
+         raise_application_error(
+            -20018,
+            'Regla de negocio: La internaciÃ³n #'
+            || p_id_internacion
+            || ' no existe en la base de datos.'
+         );
+   end;
 
-    IF v_fecha_fin IS NOT NULL THEN
-        RAISE_APPLICATION_ERROR(-20012, 'Regla de negocio: La internaciÃ³n #' || p_id_internacion || ' ya se encuentra finalizada con alta mÃ©dica previa.');
-    END IF;
+   if v_fecha_fin is not null then
+      raise_application_error(
+         -20012,
+         'Regla de negocio: La internaciÃ³n #'
+         || p_id_internacion
+         || ' ya se encuentra finalizada con alta mÃ©dica previa.'
+      );
+   end if;
 
-    UPDATE INTERNACION
-    SET fecha_fin = GREATEST(TRUNC(SYSDATE), v_fecha_inicio)
-    WHERE id_internacion = p_id_internacion;
+   update internacion
+      set
+      fecha_fin = greatest(
+         trunc(sysdate),
+         v_fecha_inicio
+      )
+    where id_internacion = p_id_internacion;
 
-    BEGIN
-        SELECT id_habitacion, nro_cama
-        INTO v_id_hab, v_nro_cama
-        FROM POSEE
-        WHERE id_internacion = p_id_internacion
-        ORDER BY fechaHora DESC
-        FETCH FIRST 1 ROW ONLY;
+   begin
+      select id_habitacion,
+             nro_cama
+        into
+         v_id_hab,
+         v_nro_cama
+        from posee
+       where id_internacion = p_id_internacion
+       order by fechahora desc
+       fetch first 1 row only;
 
-        UPDATE CAMA
-        SET estado = 'LIBRE'
-        WHERE id_habitacion = v_id_hab
-          AND nro_cama = v_nro_cama;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            NULL;
-    END;
+      update cama
+         set
+         estado = 'LIBRE'
+       where id_habitacion = v_id_hab
+         and nro_cama = v_nro_cama;
+   exception
+      when no_data_found then
+         null;
+   end;
 
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_dar_alta_internacion;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_dar_alta_internacion;
 /
 
--- 8. Consultar datos de internaciÃ³n para confirmaciÃ³n de alta
-CREATE OR REPLACE PROCEDURE sp_obtener_datos_alta (
-    p_id_internacion IN NUMBER,
-    p_cursor         OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cursor FOR
-        SELECT i.id_internacion,
-               p.nombre,
-               p.apellido,
-               i.numero_de_DNI,
-               pos.id_habitacion,
-               pos.nro_cama,
-               i.fecha_inicio,
-               i.fecha_fin
-        FROM INTERNACION i
-        JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
-        LEFT JOIN (
-            SELECT p1.id_internacion, p1.id_habitacion, p1.nro_cama
-            FROM POSEE p1
-            INNER JOIN (
-                SELECT id_internacion, MAX(fechaHora) AS max_fh
-                FROM POSEE
-                GROUP BY id_internacion
-            ) p2 ON p1.id_internacion = p2.id_internacion AND p1.fechaHora = p2.max_fh
-        ) pos ON i.id_internacion = pos.id_internacion
-        WHERE i.id_internacion = p_id_internacion;
-END sp_obtener_datos_alta;
+-- PROPÓSITO: Obtiene la información y fecha de inicio de una internación para confirmar su egreso.
+create or replace procedure sp_obtener_datos_alta (
+   p_id_internacion in number,
+   p_cursor         out sys_refcursor
+) as
+begin
+   open p_cursor for select i.id_internacion,
+                            p.nombre,
+                            p.apellido,
+                            i.numero_de_dni,
+                            pos.id_habitacion,
+                            pos.nro_cama,
+                            i.fecha_inicio,
+                            i.fecha_fin
+     from internacion i
+     join persona p
+   on i.numero_de_dni = p.numero_de_dni
+     left join (
+      select p1.id_internacion,
+             p1.id_habitacion,
+             p1.nro_cama
+        from posee p1
+       inner join (
+         select id_internacion,
+                max(fechahora) as max_fh
+           from posee
+          group by id_internacion
+      ) p2
+      on p1.id_internacion = p2.id_internacion
+         and p1.fechahora = p2.max_fh
+   ) pos
+   on i.id_internacion = pos.id_internacion
+    where i.id_internacion = p_id_internacion;
+end sp_obtener_datos_alta;
 /
 
--- 9. Consultar cama actual de una internaciÃ³n
-CREATE OR REPLACE PROCEDURE sp_consultar_cama_actual (
-    p_id_internacion IN NUMBER,
-    p_cursor         OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cursor FOR
-        SELECT p.nombre || ' ' || p.apellido AS paciente,
-               i.numero_de_DNI AS dni,
-               pos.id_habitacion,
-               pos.nro_cama,
-               c.estado,
-               s.nombre AS nombre_sector,
-               pos.fechaHora,
-               i.fecha_inicio,
-               i.fecha_fin
-        FROM INTERNACION i
-        JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
-        LEFT JOIN (
-            SELECT id_internacion, id_habitacion, nro_cama, fechaHora
-            FROM POSEE
-            WHERE id_internacion = p_id_internacion
-            ORDER BY fechaHora DESC
-            FETCH FIRST 1 ROW ONLY
-        ) pos ON i.id_internacion = pos.id_internacion
-        LEFT JOIN HABITACION h ON pos.id_habitacion = h.id_habitacion
-        LEFT JOIN SECTOR s ON h.id_sector = s.id_sector
-        LEFT JOIN CAMA c ON pos.id_habitacion = c.id_habitacion AND pos.nro_cama = c.nro_cama
-        WHERE i.id_internacion = p_id_internacion;
-END sp_consultar_cama_actual;
+-- PROPÓSITO: Obtiene el sector, habitación y cama que está ocupando actualmente un paciente internado.
+create or replace procedure sp_consultar_cama_actual (
+   p_id_internacion in number,
+   p_cursor         out sys_refcursor
+) as
+begin
+   open p_cursor for select p.nombre
+                            || ' '
+                            || p.apellido as paciente,
+                            i.numero_de_dni as dni,
+                            pos.id_habitacion,
+                            pos.nro_cama,
+                            c.estado,
+                            s.nombre as nombre_sector,
+                            pos.fechahora,
+                            i.fecha_inicio,
+                            i.fecha_fin
+     from internacion i
+     join persona p
+   on i.numero_de_dni = p.numero_de_dni
+     left join (
+      select id_internacion,
+             id_habitacion,
+             nro_cama,
+             fechahora
+        from posee
+       where id_internacion = p_id_internacion
+       order by fechahora desc
+       fetch first 1 row only
+   ) pos
+   on i.id_internacion = pos.id_internacion
+     left join habitacion h
+   on pos.id_habitacion = h.id_habitacion
+     left join sector s
+   on h.id_sector = s.id_sector
+     left join cama c
+   on pos.id_habitacion = c.id_habitacion
+      and pos.nro_cama = c.nro_cama
+    where i.id_internacion = p_id_internacion;
+end sp_consultar_cama_actual;
 /
 
--- 10. Crear guardia y asignar mÃ©dico de forma atÃ³mica
-CREATE OR REPLACE PROCEDURE sp_crear_y_asignar_guardia (
-    p_turno           IN VARCHAR2,
-    p_fecha           IN DATE,
-    p_matricula       IN VARCHAR2,
-    p_id_especialidad IN NUMBER,
-    p_id_guardia      OUT NUMBER
-) AS
-    v_cant_med NUMBER;
-    v_cant_esp NUMBER;
-BEGIN
-    IF p_turno IS NULL OR p_fecha IS NULL OR p_matricula IS NULL OR p_id_especialidad IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20036, 'Regla de negocio: Turno, fecha, mÃ©dico y especialidad son obligatorios para crear una guardia.');
-    END IF;
+-- PROPÓSITO: Crea una nueva guardia hospitalaria y le asigna el médico responsable con su especialidad.
+create or replace procedure sp_crear_y_asignar_guardia (
+   p_turno           in varchar2,
+   p_fecha           in date,
+   p_matricula       in varchar2,
+   p_id_especialidad in number,
+   p_id_guardia      out number
+) as
+   v_cant_med number;
+   v_cant_esp number;
+begin
+   if p_turno is null
+   or p_fecha is null
+   or p_matricula is null
+   or p_id_especialidad is null then
+      raise_application_error(
+         -20036,
+         'Regla de negocio: Turno, fecha, médico y especialidad son obligatorios para crear una guardia.'
+      );
+   end if;
 
-    SELECT COUNT(*) INTO v_cant_med FROM MEDICO WHERE numero_de_matricula = p_matricula;
-    IF v_cant_med = 0 THEN
-        RAISE_APPLICATION_ERROR(-20035, 'Regla de negocio: La matrÃ­cula mÃ©dica ' || p_matricula || ' no existe en el sistema.');
-    END IF;
+   select count(*)
+     into v_cant_med
+     from medico
+    where numero_de_matricula = p_matricula;
+   if v_cant_med = 0 then
+      raise_application_error(
+         -20035,
+         'Regla de negocio: La matrÃ­cula mÃ©dica '
+         || p_matricula
+         || ' no existe en el sistema.'
+      );
+   end if;
 
-    SELECT COUNT(*) INTO v_cant_esp FROM ESPECIALIDAD WHERE id_especialidad = p_id_especialidad;
-    IF v_cant_esp = 0 THEN
-        RAISE_APPLICATION_ERROR(-20037, 'Regla de negocio: La especialidad seleccionada no existe en la base de datos.');
-    END IF;
+   select count(*)
+     into v_cant_esp
+     from especialidad
+    where id_especialidad = p_id_especialidad;
+   if v_cant_esp = 0 then
+      raise_application_error(
+         -20037,
+         'Regla de negocio: La especialidad seleccionada no existe en la base de datos.'
+      );
+   end if;
 
     -- Validar que el médico tenga la especialidad registrada en TIENE y esté dispuesto
-    DECLARE
-        v_dispuesto VARCHAR2(10);
-    BEGIN
-        SELECT dispuesto INTO v_dispuesto
-        FROM TIENE
-        WHERE numero_de_matricula = p_matricula
-          AND id_especialidad = p_id_especialidad;
+   declare
+      v_dispuesto varchar2(10);
+   begin
+      select dispuesto
+        into v_dispuesto
+        from tiene
+       where numero_de_matricula = p_matricula
+         and id_especialidad = p_id_especialidad;
 
-        IF UPPER(TRIM(v_dispuesto)) != 'SI' THEN
-            RAISE_APPLICATION_ERROR(-20003, 'Regla de negocio: El médico no está dispuesto a realizar guardias en esta especialidad.');
-        END IF;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20047, 'Regla de negocio: El médico no tiene registrada la especialidad seleccionada.');
-    END;
+      if upper(trim(v_dispuesto)) != 'SI' then
+         raise_application_error(
+            -20003,
+            'Regla de negocio: El médico no está dispuesto a realizar guardias en esta especialidad.'
+         );
+      end if;
+   exception
+      when no_data_found then
+         raise_application_error(
+            -20047,
+            'Regla de negocio: El médico no tiene registrada la especialidad seleccionada.'
+         );
+   end;
 
-    INSERT INTO GUARDIA (turno, fecha)
-    VALUES (UPPER(TRIM(p_turno)), p_fecha)
-    RETURNING id_guardia INTO p_id_guardia;
+   insert into guardia (
+      turno,
+      fecha
+   ) values
+      ( upper(trim(p_turno)),
+        p_fecha )
+   returning id_guardia into p_id_guardia;
 
-    INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia)
-    VALUES (p_matricula, p_id_especialidad, p_id_guardia);
+   insert into cubierta_por (
+      numero_de_matricula,
+      id_especialidad,
+      id_guardia
+   ) values
+      ( p_matricula,
+        p_id_especialidad,
+        p_id_guardia );
 
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_crear_y_asignar_guardia;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_crear_y_asignar_guardia;
 /
 
--- 11. Modificar guardia completa (fecha, turno y médicos asignados) de forma atómica
-CREATE OR REPLACE PROCEDURE sp_modificar_guardia (
-    p_id_guardia IN NUMBER,
-    p_fecha      IN DATE,
-    p_turno      IN VARCHAR2,
-    p_asignaciones IN VARCHAR2 -- Formato: 'MAT1:ID_ESP1,MAT2:ID_ESP2'
-) AS
-    TYPE t_asig_rec IS RECORD (
-        matricula       VARCHAR2(10),
-        id_especialidad NUMBER(7),
-        procesada       BOOLEAN
-    );
-    TYPE t_asig_tab IS TABLE OF t_asig_rec INDEX BY PLS_INTEGER;
+-- PROPÓSITO: Permite modificar la fecha, el turno y la nómina de médicos de una guardia de forma segura.
+create or replace procedure sp_modificar_guardia (
+   p_id_guardia   in number,
+   p_fecha        in date,
+   p_turno        in varchar2,
+   p_asignaciones in varchar2 -- Formato: 'MAT1:ID_ESP1,MAT2:ID_ESP2'
+) as
+   type t_asig_rec is record (
+         matricula       varchar2(10),
+         id_especialidad number(7),
+         procesada       boolean
+   );
+   type t_asig_tab is
+      table of t_asig_rec index by pls_integer;
+   v_nuevas       t_asig_tab;
+   v_actuales     t_asig_tab;
+   type t_reemplazo_rec is record (
+         mat_ant varchar2(10),
+         esp_ant number(7),
+         mat_nva varchar2(10),
+         esp_nva number(7)
+   );
+   type t_reemplazo_tab is
+      table of t_reemplazo_rec index by pls_integer;
+   v_updates      t_reemplazo_tab;
+   v_turno_nuevo  varchar2(15);
+   v_fecha_actual date;
+   v_turno_actual varchar2(15);
+   v_texto        varchar2(4000);
+   v_pos          pls_integer;
+   v_len          pls_integer;
+   v_coma         pls_integer;
+   v_sep          pls_integer;
+   v_item         varchar2(4000);
+   v_mat          varchar2(200);
+   v_esp_str      varchar2(100);
+   v_id_esp       number;
+   v_idx          pls_integer;
+   v_cant_med     number;
+   v_cant_esp     number;
+   v_dispuesto    varchar2(10);
+   v_cant_final   number;
+begin
+   if p_id_guardia is null
+   or p_fecha is null
+   or p_turno is null
+   or trim(p_turno) is null then
+      raise_application_error(
+         -20038,
+         'Regla de negocio: ID de guardia, fecha y turno son obligatorios.'
+      );
+   end if;
 
-    v_nuevas       t_asig_tab;
-    v_actuales     t_asig_tab;
+   if p_asignaciones is null
+   or trim(p_asignaciones) is null then
+      raise_application_error(
+         -20022,
+         'Regla de negocio: Una guardia no puede quedar sin médicos asignados.'
+      );
+   end if;
 
-    TYPE t_reemplazo_rec IS RECORD (
-        mat_ant VARCHAR2(10),
-        esp_ant NUMBER(7),
-        mat_nva VARCHAR2(10),
-        esp_nva NUMBER(7)
-    );
-    TYPE t_reemplazo_tab IS TABLE OF t_reemplazo_rec INDEX BY PLS_INTEGER;
+   v_turno_nuevo := upper(trim(p_turno));
 
-    v_updates      t_reemplazo_tab;
+    -- Parsear lista de asignaciones 'MAT1:ID_ESP1,MAT2:ID_ESP2'
+   v_texto := trim(p_asignaciones);
+   v_pos := 1;
+   v_len := length(v_texto);
+   while v_pos <= v_len loop
+      v_coma := instr(
+         v_texto,
+         ',',
+         v_pos
+      );
+      if v_coma = 0 then
+         v_item := trim(substr(
+            v_texto,
+            v_pos
+         ));
+         v_pos := v_len + 1;
+      else
+         v_item := trim(substr(
+            v_texto,
+            v_pos,
+            v_coma - v_pos
+         ));
+         v_pos := v_coma + 1;
+      end if;
 
-    v_turno_nuevo  VARCHAR2(15);
-    v_fecha_actual DATE;
-    v_turno_actual VARCHAR2(15);
+      if v_item is null then
+         raise_application_error(
+            -20045,
+            'Regla de negocio: Formato inválido en la lista de asignaciones (elemento vacío).'
+         );
+      end if;
+      v_sep := instr(
+         v_item,
+         ':'
+      );
+      if v_sep <= 1
+      or v_sep = length(v_item) then
+         raise_application_error(
+            -20045,
+            'Regla de negocio: Formato inválido en la asignación ('
+            || v_item
+            || ').'
+         );
+      end if;
 
-    v_texto        VARCHAR2(4000);
-    v_pos          PLS_INTEGER;
-    v_len          PLS_INTEGER;
-    v_coma         PLS_INTEGER;
-    v_sep          PLS_INTEGER;
-    v_item         VARCHAR2(4000);
-    v_mat          VARCHAR2(200);
-    v_esp_str      VARCHAR2(100);
-    v_id_esp       NUMBER;
-    v_idx          PLS_INTEGER;
+      v_mat := trim(substr(
+         v_item,
+         1,
+         v_sep - 1
+      ));
+      v_esp_str := trim(substr(
+         v_item,
+         v_sep + 1
+      ));
+      if v_mat is null
+      or v_esp_str is null
+      or instr(
+         v_esp_str,
+         ':'
+      ) > 0 then
+         raise_application_error(
+            -20045,
+            'Regla de negocio: Formato inválido en la asignación ('
+            || v_item
+            || ').'
+         );
+      end if;
 
-    v_cant_med     NUMBER;
-    v_cant_esp     NUMBER;
-    v_dispuesto    VARCHAR2(10);
-    v_cant_final   NUMBER;
-BEGIN
-    -- 1. Validar parámetros obligatorios
-    IF p_id_guardia IS NULL OR p_fecha IS NULL OR p_turno IS NULL OR TRIM(p_turno) IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20038, 'Regla de negocio: ID de guardia, fecha y turno son obligatorios.');
-    END IF;
+      if length(v_mat) > 10 then
+         raise_application_error(
+            -20035,
+            'Regla de negocio: La matrícula médica '
+            || substr(
+               v_mat,
+               1,
+               30
+            )
+            || ' no existe en el sistema.'
+         );
+      end if;
 
-    IF p_asignaciones IS NULL OR TRIM(p_asignaciones) IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20022, 'Regla de negocio: Una guardia no puede quedar sin médicos asignados.');
-    END IF;
+      begin
+         v_id_esp := to_number ( v_esp_str );
+      exception
+         when value_error then
+            raise_application_error(
+               -20045,
+               'Regla de negocio: ID de especialidad inválido ('
+               || v_esp_str
+               || ').'
+            );
+      end;
 
-    v_turno_nuevo := UPPER(TRIM(p_turno));
+      if v_id_esp != trunc(v_id_esp)
+      or v_id_esp <= 0
+      or v_id_esp > 9999999 then
+         raise_application_error(
+            -20045,
+            'Regla de negocio: ID de especialidad inválido ('
+            || v_esp_str
+            || ').'
+         );
+      end if;
 
-    -- 2. Parsear lista de asignaciones 'MAT1:ID_ESP1,MAT2:ID_ESP2'
-    v_texto := TRIM(p_asignaciones);
-    v_pos := 1;
-    v_len := LENGTH(v_texto);
+      for i in 1..v_nuevas.count loop
+         if
+            v_nuevas(i).matricula = v_mat
+            and v_nuevas(i).id_especialidad = v_id_esp
+         then
+            raise_application_error(
+               -20045,
+               'Regla de negocio: No se permiten asignaciones duplicadas en la guardia ('
+               || v_mat
+               || ').'
+            );
+         end if;
+      end loop;
 
-    WHILE v_pos <= v_len LOOP
-        v_coma := INSTR(v_texto, ',', v_pos);
-        IF v_coma = 0 THEN
-            v_item := TRIM(SUBSTR(v_texto, v_pos));
-            v_pos := v_len + 1;
-        ELSE
-            v_item := TRIM(SUBSTR(v_texto, v_pos, v_coma - v_pos));
-            v_pos := v_coma + 1;
-        END IF;
+      v_idx := v_nuevas.count + 1;
+      v_nuevas(v_idx).matricula := v_mat;
+      v_nuevas(v_idx).id_especialidad := v_id_esp;
+      v_nuevas(v_idx).procesada := false;
+   end loop;
 
-        IF v_item IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20045, 'Regla de negocio: Formato inválido en la lista de asignaciones (elemento vacío).');
-        END IF;
+   if v_nuevas.count = 0 then
+      raise_application_error(
+         -20022,
+         'Regla de negocio: Una guardia no puede quedar sin médicos asignados.'
+      );
+   end if;
 
-        v_sep := INSTR(v_item, ':');
-        IF v_sep <= 1 OR v_sep = LENGTH(v_item) THEN
-            RAISE_APPLICATION_ERROR(-20045, 'Regla de negocio: Formato inválido en la asignación (' || v_item || ').');
-        END IF;
+    -- Bloquear la fila padre en GUARDIA para serializar modificaciones concurrentes
+   begin
+      select fecha,
+             upper(trim(turno))
+        into
+         v_fecha_actual,
+         v_turno_actual
+        from guardia
+       where id_guardia = p_id_guardia
+      for update;
+   exception
+      when no_data_found then
+         raise_application_error(
+            -20039,
+            'Regla de negocio: La guardia #'
+            || p_id_guardia
+            || ' no existe.'
+         );
+   end;
 
-        v_mat := TRIM(SUBSTR(v_item, 1, v_sep - 1));
-        v_esp_str := TRIM(SUBSTR(v_item, v_sep + 1));
+    -- Validar existencia de médicos, especialidades y disponibilidad en TIENE
+   for i in 1..v_nuevas.count loop
+      select count(*)
+        into v_cant_med
+        from medico
+       where numero_de_matricula = v_nuevas(i).matricula;
 
-        IF v_mat IS NULL OR v_esp_str IS NULL OR INSTR(v_esp_str, ':') > 0 THEN
-            RAISE_APPLICATION_ERROR(-20045, 'Regla de negocio: Formato inválido en la asignación (' || v_item || ').');
-        END IF;
+      if v_cant_med = 0 then
+         raise_application_error(
+            -20035,
+            'Regla de negocio: La matrícula médica '
+            || v_nuevas(i).matricula
+            || ' no existe en el sistema.'
+         );
+      end if;
 
-        IF LENGTH(v_mat) > 10 THEN
-            RAISE_APPLICATION_ERROR(-20035, 'Regla de negocio: La matrícula médica ' || SUBSTR(v_mat, 1, 30) || ' no existe en el sistema.');
-        END IF;
+      select count(*)
+        into v_cant_esp
+        from especialidad
+       where id_especialidad = v_nuevas(i).id_especialidad;
 
-        BEGIN
-            v_id_esp := TO_NUMBER(v_esp_str);
-        EXCEPTION
-            WHEN VALUE_ERROR THEN
-                RAISE_APPLICATION_ERROR(-20045, 'Regla de negocio: ID de especialidad inválido (' || v_esp_str || ').');
-        END;
+      if v_cant_esp = 0 then
+         raise_application_error(
+            -20037,
+            'Regla de negocio: La especialidad seleccionada no existe en la base de datos.'
+         );
+      end if;
+      begin
+         select dispuesto
+           into v_dispuesto
+           from tiene
+          where numero_de_matricula = v_nuevas(i).matricula
+            and id_especialidad = v_nuevas(i).id_especialidad;
+      exception
+         when no_data_found then
+            raise_application_error(
+               -20047,
+               'Regla de negocio: El médico no tiene registrada la especialidad seleccionada.'
+            );
+      end;
 
-        IF v_id_esp != TRUNC(v_id_esp) OR v_id_esp <= 0 OR v_id_esp > 9999999 THEN
-            RAISE_APPLICATION_ERROR(-20045, 'Regla de negocio: ID de especialidad inválido (' || v_esp_str || ').');
-        END IF;
+      if upper(trim(v_dispuesto)) != 'SI' then
+         raise_application_error(
+            -20003,
+            'Regla de negocio: El médico no está dispuesto a realizar guardias en esta especialidad.'
+         );
+      end if;
+   end loop;
 
-        FOR i IN 1 .. v_nuevas.COUNT LOOP
-            IF v_nuevas(i).matricula = v_mat AND v_nuevas(i).id_especialidad = v_id_esp THEN
-                RAISE_APPLICATION_ERROR(-20045, 'Regla de negocio: No se permiten asignaciones duplicadas en la guardia (' || v_mat || ').');
-            END IF;
-        END LOOP;
+    -- Leer asignaciones actuales de la guardia
+   for r in (
+      select numero_de_matricula,
+             id_especialidad
+        from cubierta_por
+       where id_guardia = p_id_guardia
+   ) loop
+      v_idx := v_actuales.count + 1;
+      v_actuales(v_idx).matricula := r.numero_de_matricula;
+      v_actuales(v_idx).id_especialidad := r.id_especialidad;
+      v_actuales(v_idx).procesada := false;
+   end loop;
 
-        v_idx := v_nuevas.COUNT + 1;
-        v_nuevas(v_idx).matricula := v_mat;
-        v_nuevas(v_idx).id_especialidad := v_id_esp;
-        v_nuevas(v_idx).procesada := FALSE;
-    END LOOP;
+    -- Marcar como procesados los pares idénticos que permanecen sin cambios
+   for i in 1..v_actuales.count loop
+      for j in 1..v_nuevas.count loop
+         if
+            not v_nuevas(j).procesada
+            and v_actuales(i).matricula = v_nuevas(j).matricula
+            and v_actuales(i).id_especialidad = v_nuevas(j).id_especialidad
+         then
+            v_actuales(i).procesada := true;
+            v_nuevas(j).procesada := true;
+            exit;
+         end if;
+      end loop;
+   end loop;
 
-    IF v_nuevas.COUNT = 0 THEN
-        RAISE_APPLICATION_ERROR(-20022, 'Regla de negocio: Una guardia no puede quedar sin médicos asignados.');
-    END IF;
+   for v_pasada in 1..3 loop
+      for i in 1..v_actuales.count loop
+         if not v_actuales(i).procesada then
+            for j in 1..v_nuevas.count loop
+               if
+                  not v_nuevas(j).procesada
+                  and ( (
+                     v_pasada = 1
+                     and v_actuales(i).matricula = v_nuevas(j).matricula
+                  )
+                  or (
+                     v_pasada = 2
+                     and v_actuales(i).id_especialidad = v_nuevas(j).id_especialidad
+                  )
+                  or ( v_pasada = 3 ) )
+               then
+                  v_idx := v_updates.count + 1;
+                  v_updates(v_idx).mat_ant := v_actuales(i).matricula;
+                  v_updates(v_idx).esp_ant := v_actuales(i).id_especialidad;
+                  v_updates(v_idx).mat_nva := v_nuevas(j).matricula;
+                  v_updates(v_idx).esp_nva := v_nuevas(j).id_especialidad;
+                  v_actuales(i).procesada := true;
+                  v_nuevas(j).procesada := true;
+                  exit;
+               end if;
+            end loop;
+         end if;
+      end loop;
+   end loop;
 
-    -- 3. Bloquear la fila padre en GUARDIA para serializar modificaciones concurrentes
-    BEGIN
-        SELECT fecha, UPPER(TRIM(turno))
-        INTO v_fecha_actual, v_turno_actual
-        FROM GUARDIA
-        WHERE id_guardia = p_id_guardia
-        FOR UPDATE;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20039, 'Regla de negocio: La guardia #' || p_id_guardia || ' no existe.');
-    END;
+    -- Desasignar únicamente médicos salientes excedentes ANTES de actualizar GUARDIA
+   for i in 1..v_actuales.count loop
+      if not v_actuales(i).procesada then
+         delete from cubierta_por
+          where id_guardia = p_id_guardia
+            and numero_de_matricula = v_actuales(i).matricula
+            and id_especialidad = v_actuales(i).id_especialidad;
 
-    -- 4. Validar existencia de médicos, especialidades y disponibilidad en TIENE
-    FOR i IN 1 .. v_nuevas.COUNT LOOP
-        SELECT COUNT(*) INTO v_cant_med
-        FROM MEDICO
-        WHERE numero_de_matricula = v_nuevas(i).matricula;
+         v_actuales(i).procesada := true;
+      end if;
+   end loop;
 
-        IF v_cant_med = 0 THEN
-            RAISE_APPLICATION_ERROR(-20035, 'Regla de negocio: La matrícula médica ' || v_nuevas(i).matricula || ' no existe en el sistema.');
-        END IF;
+    -- Actualizar fecha y turno en GUARDIA si cambiaron
+   if trunc(p_fecha) != trunc(v_fecha_actual)
+   or v_turno_nuevo != v_turno_actual then
+      update guardia
+         set fecha = p_fecha,
+             turno = v_turno_nuevo
+       where id_guardia = p_id_guardia;
+   end if;
 
-        SELECT COUNT(*) INTO v_cant_esp
-        FROM ESPECIALIDAD
-        WHERE id_especialidad = v_nuevas(i).id_especialidad;
+    -- Aplicar reemplazos de médico y cambios de especialidad mediante UPDATE CUBIERTA_POR
+   for k in 1..v_updates.count loop
+      update cubierta_por
+         set numero_de_matricula = v_updates(k).mat_nva,
+             id_especialidad = v_updates(k).esp_nva
+       where id_guardia = p_id_guardia
+         and numero_de_matricula = v_updates(k).mat_ant
+         and id_especialidad = v_updates(k).esp_ant;
 
-        IF v_cant_esp = 0 THEN
-            RAISE_APPLICATION_ERROR(-20037, 'Regla de negocio: La especialidad seleccionada no existe en la base de datos.');
-        END IF;
+      if sql%rowcount = 0 then
+         raise_application_error(
+            -20046,
+            'Regla de negocio: La asignación original que se intenta reemplazar no existe en la guardia.'
+         );
+      end if;
+   end loop;
 
-        BEGIN
-            SELECT dispuesto INTO v_dispuesto
-            FROM TIENE
-            WHERE numero_de_matricula = v_nuevas(i).matricula
-              AND id_especialidad = v_nuevas(i).id_especialidad;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                RAISE_APPLICATION_ERROR(-20047, 'Regla de negocio: El médico no tiene registrada la especialidad seleccionada.');
-        END;
+    --Insertar únicamente médicos nuevos excedentes (validados contra la nueva fecha y turno)
+   for j in 1..v_nuevas.count loop
+      if not v_nuevas(j).procesada then
+         insert into cubierta_por (
+            numero_de_matricula,
+            id_especialidad,
+            id_guardia
+         ) values
+            ( v_nuevas(j).matricula,
+              v_nuevas(j).id_especialidad,
+              p_id_guardia );
 
-        IF UPPER(TRIM(v_dispuesto)) != 'SI' THEN
-            RAISE_APPLICATION_ERROR(-20003, 'Regla de negocio: El médico no está dispuesto a realizar guardias en esta especialidad.');
-        END IF;
-    END LOOP;
+         v_nuevas(j).procesada := true;
+      end if;
+   end loop;
 
-    -- 5. Leer asignaciones actuales de la guardia
-    FOR r IN (
-        SELECT numero_de_matricula, id_especialidad
-        FROM CUBIERTA_POR
-        WHERE id_guardia = p_id_guardia
-    ) LOOP
-        v_idx := v_actuales.COUNT + 1;
-        v_actuales(v_idx).matricula := r.numero_de_matricula;
-        v_actuales(v_idx).id_especialidad := r.id_especialidad;
-        v_actuales(v_idx).procesada := FALSE;
-    END LOOP;
+    -- Garantizar que la guardia nunca quede sin médicos asignados
+   select count(*)
+     into v_cant_final
+     from cubierta_por
+    where id_guardia = p_id_guardia;
 
-    -- 6. Marcar como procesados los pares idénticos que permanecen sin cambios
-    FOR i IN 1 .. v_actuales.COUNT LOOP
-        FOR j IN 1 .. v_nuevas.COUNT LOOP
-            IF NOT v_nuevas(j).procesada
-               AND v_actuales(i).matricula = v_nuevas(j).matricula
-               AND v_actuales(i).id_especialidad = v_nuevas(j).id_especialidad THEN
-                v_actuales(i).procesada := TRUE;
-                v_nuevas(j).procesada := TRUE;
-                EXIT;
-            END IF;
-        END LOOP;
-    END LOOP;
+   if v_cant_final = 0 then
+      raise_application_error(
+         -20022,
+         'Regla de negocio: Una guardia no puede quedar sin médicos asignados.'
+      );
+   end if;
 
-    -- 6b. Emparejar cambios y reemplazos 1 a 1 para actualizar mediante UPDATE CUBIERTA_POR
-    -- (pasada 1: mismo médico cambia especialidad; pasada 2: reemplazo con misma especialidad;
-    --  pasada 3: reemplazos restantes con distinta matrícula y distinta especialidad)
-    FOR v_pasada IN 1 .. 3 LOOP
-        FOR i IN 1 .. v_actuales.COUNT LOOP
-            IF NOT v_actuales(i).procesada THEN
-                FOR j IN 1 .. v_nuevas.COUNT LOOP
-                    IF NOT v_nuevas(j).procesada AND (
-                        (v_pasada = 1 AND v_actuales(i).matricula = v_nuevas(j).matricula)
-                        OR (v_pasada = 2 AND v_actuales(i).id_especialidad = v_nuevas(j).id_especialidad)
-                        OR (v_pasada = 3)
-                    ) THEN
-                        v_idx := v_updates.COUNT + 1;
-                        v_updates(v_idx).mat_ant := v_actuales(i).matricula;
-                        v_updates(v_idx).esp_ant := v_actuales(i).id_especialidad;
-                        v_updates(v_idx).mat_nva := v_nuevas(j).matricula;
-                        v_updates(v_idx).esp_nva := v_nuevas(j).id_especialidad;
-                        v_actuales(i).procesada := TRUE;
-                        v_nuevas(j).procesada := TRUE;
-                        EXIT;
-                    END IF;
-                END LOOP;
-            END IF;
-        END LOOP;
-    END LOOP;
-
-    -- 7. Desasignar únicamente médicos salientes excedentes ANTES de actualizar GUARDIA
-    -- (evita falsos conflictos en trg_validar_cambio_guardia cuando disminuye la cantidad de médicos)
-    FOR i IN 1 .. v_actuales.COUNT LOOP
-        IF NOT v_actuales(i).procesada THEN
-            DELETE FROM CUBIERTA_POR
-            WHERE id_guardia = p_id_guardia
-              AND numero_de_matricula = v_actuales(i).matricula
-              AND id_especialidad = v_actuales(i).id_especialidad;
-
-            v_actuales(i).procesada := TRUE;
-        END IF;
-    END LOOP;
-
-    -- 8. Actualizar fecha y turno en GUARDIA si cambiaron
-    IF TRUNC(p_fecha) != TRUNC(v_fecha_actual) OR v_turno_nuevo != v_turno_actual THEN
-        UPDATE GUARDIA
-        SET fecha = p_fecha,
-            turno = v_turno_nuevo
-        WHERE id_guardia = p_id_guardia;
-    END IF;
-
-    -- 9. Aplicar reemplazos de médico y cambios de especialidad mediante UPDATE CUBIERTA_POR
-    -- (registra 'UPDATE' en AUDITORIA_GUARDIAS en lugar de 'DELETE' + 'INSERT', validado ya contra la nueva fecha/turno)
-    FOR k IN 1 .. v_updates.COUNT LOOP
-        UPDATE CUBIERTA_POR
-        SET numero_de_matricula = v_updates(k).mat_nva,
-            id_especialidad = v_updates(k).esp_nva
-        WHERE id_guardia = p_id_guardia
-          AND numero_de_matricula = v_updates(k).mat_ant
-          AND id_especialidad = v_updates(k).esp_ant;
-
-        IF SQL%ROWCOUNT = 0 THEN
-            RAISE_APPLICATION_ERROR(-20046, 'Regla de negocio: La asignación original que se intenta reemplazar no existe en la guardia.');
-        END IF;
-    END LOOP;
-
-    -- 10. Insertar únicamente médicos nuevos excedentes (validados contra la nueva fecha y turno)
-    FOR j IN 1 .. v_nuevas.COUNT LOOP
-        IF NOT v_nuevas(j).procesada THEN
-            INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia)
-            VALUES (v_nuevas(j).matricula, v_nuevas(j).id_especialidad, p_id_guardia);
-
-            v_nuevas(j).procesada := TRUE;
-        END IF;
-    END LOOP;
-
-    -- 11. Garantizar que la guardia nunca quede sin médicos asignados
-    SELECT COUNT(*) INTO v_cant_final
-    FROM CUBIERTA_POR
-    WHERE id_guardia = p_id_guardia;
-
-    IF v_cant_final = 0 THEN
-        RAISE_APPLICATION_ERROR(-20022, 'Regla de negocio: Una guardia no puede quedar sin médicos asignados.');
-    END IF;
-
-    -- 12. Confirmar toda la modificación atómicamente
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_modificar_guardia;
+    -- Confirmar toda la modificación atómicamente
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_modificar_guardia;
 /
 
--- 15. Eliminar guardia y sus asignaciones
-CREATE OR REPLACE PROCEDURE sp_eliminar_guardia (
-    p_id_guardia IN NUMBER
-) AS
-BEGIN
-    DELETE FROM CUBIERTA_POR WHERE id_guardia = p_id_guardia;
-    DELETE FROM GUARDIA WHERE id_guardia = p_id_guardia;
+-- PROPÓSITO: Elimina una guardia del sistema junto con todas las asignaciones médicas que tenía asociadas.
+create or replace procedure sp_eliminar_guardia (
+   p_id_guardia in number
+) as
+begin
+   delete from cubierta_por
+    where id_guardia = p_id_guardia;
+   delete from guardia
+    where id_guardia = p_id_guardia;
 
-    IF SQL%ROWCOUNT = 0 THEN
-        RAISE_APPLICATION_ERROR(-20023, 'Regla de negocio: La guardia #' || p_id_guardia || ' no existe en la base de datos.');
-    END IF;
+   if sql%rowcount = 0 then
+      raise_application_error(
+         -20023,
+         'Regla de negocio: La guardia #'
+         || p_id_guardia
+         || ' no existe en la base de datos.'
+      );
+   end if;
 
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_eliminar_guardia;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_eliminar_guardia;
 /
 
--- 15. Registrar recorrido de un mÃ©dico en una ronda
-CREATE OR REPLACE PROCEDURE sp_registrar_recorrido (
-    p_fecha          IN DATE,
-    p_id_ronda       IN NUMBER,
-    p_matricula      IN VARCHAR2,
-    p_id_recorrido   OUT NUMBER
-) AS
-    v_cant NUMBER;
-BEGIN
-    IF p_fecha IS NULL OR p_id_ronda IS NULL OR p_matricula IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20040, 'Regla de negocio: Fecha, ronda y matrÃ­cula mÃ©dica son obligatorios para el recorrido.');
-    END IF;
+-- PROPÓSITO: Registra la realización de un recorrido de ronda médica por parte de un profesional.
+create or replace procedure sp_registrar_recorrido (
+   p_fecha        in date,
+   p_id_ronda     in number,
+   p_matricula    in varchar2,
+   p_id_recorrido out number
+) as
+   v_cant number;
+begin
+   if p_fecha is null
+   or p_id_ronda is null
+   or p_matricula is null then
+      raise_application_error(
+         -20040,
+         'Regla de negocio: Fecha, ronda y matrÃ­cula mÃ©dica son obligatorios para el recorrido.'
+      );
+   end if;
 
-    SELECT COUNT(*) INTO v_cant FROM RONDA WHERE id_ronda = p_id_ronda;
-    IF v_cant = 0 THEN
-        RAISE_APPLICATION_ERROR(-20041, 'Regla de negocio: La ronda #' || p_id_ronda || ' no existe en la base de datos.');
-    END IF;
+   select count(*)
+     into v_cant
+     from ronda
+    where id_ronda = p_id_ronda;
+   if v_cant = 0 then
+      raise_application_error(
+         -20041,
+         'Regla de negocio: La ronda #'
+         || p_id_ronda
+         || ' no existe en la base de datos.'
+      );
+   end if;
 
-    SELECT COUNT(*) INTO v_cant FROM MEDICO WHERE numero_de_matricula = p_matricula;
-    IF v_cant = 0 THEN
-        RAISE_APPLICATION_ERROR(-20035, 'Regla de negocio: La matrÃ­cula mÃ©dica ' || p_matricula || ' no existe en el sistema.');
-    END IF;
+   select count(*)
+     into v_cant
+     from medico
+    where numero_de_matricula = p_matricula;
+   if v_cant = 0 then
+      raise_application_error(
+         -20035,
+         'Regla de negocio: La matrÃ­cula mÃ©dica '
+         || p_matricula
+         || ' no existe en el sistema.'
+      );
+   end if;
 
-    INSERT INTO RECORRIDO (fecha, id_ronda, numero_de_matricula)
-    VALUES (TRUNC(p_fecha), p_id_ronda, p_matricula)
-    RETURNING id_recorrido INTO p_id_recorrido;
+   insert into recorrido (
+      fecha,
+      id_ronda,
+      numero_de_matricula
+   ) values
+      ( trunc(p_fecha),
+        p_id_ronda,
+        p_matricula )
+   returning id_recorrido into p_id_recorrido;
 
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_registrar_recorrido;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_registrar_recorrido;
 /
 
--- 16. Eliminar recorrido
-CREATE OR REPLACE PROCEDURE sp_eliminar_recorrido (
-    p_id_recorrido IN NUMBER
-) AS
-    v_cant_com NUMBER;
-BEGIN
-    SELECT COUNT(*) INTO v_cant_com
-    FROM COMENTARIO
-    WHERE id_recorrido = p_id_recorrido;
+-- PROPÓSITO: Elimina un recorrido de ronda médica siempre y cuando no tenga observaciones o comentarios asociados.
+create or replace procedure sp_eliminar_recorrido (
+   p_id_recorrido in number
+) as
+   v_cant_com number;
+begin
+   select count(*)
+     into v_cant_com
+     from comentario
+    where id_recorrido = p_id_recorrido;
 
-    IF v_cant_com > 0 THEN
-        RAISE_APPLICATION_ERROR(-20024, 'Regla de negocio: El recorrido #' || p_id_recorrido || ' tiene comentarios mÃ©dicos asociados. No se puede eliminar.');
-    END IF;
+   if v_cant_com > 0 then
+      raise_application_error(
+         -20024,
+         'Regla de negocio: El recorrido #'
+         || p_id_recorrido
+         || ' tiene comentarios médicos asociados. No se puede eliminar.'
+      );
+   end if;
 
-    DELETE FROM RECORRIDO WHERE id_recorrido = p_id_recorrido;
+   delete from recorrido
+    where id_recorrido = p_id_recorrido;
 
-    IF SQL%ROWCOUNT = 0 THEN
-        RAISE_APPLICATION_ERROR(-20042, 'Regla de negocio: El recorrido #' || p_id_recorrido || ' no existe en la base de datos.');
-    END IF;
+   if sql%rowcount = 0 then
+      raise_application_error(
+         -20042,
+         'Regla de negocio: El recorrido #'
+         || p_id_recorrido
+         || ' no existe en la base de datos.'
+      );
+   end if;
 
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_eliminar_recorrido;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_eliminar_recorrido;
 /
 
--- 17. Registrar comentario mÃ©dico
-CREATE OR REPLACE PROCEDURE sp_registrar_comentario (
-    p_id_internacion IN NUMBER,
-    p_id_recorrido   IN NUMBER,
-    p_contenido      IN VARCHAR2,
-    p_id_comentario  OUT NUMBER
-) AS
-BEGIN
-    IF p_id_internacion IS NULL OR p_id_recorrido IS NULL OR TRIM(p_contenido) IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20043, 'Regla de negocio: InternaciÃ³n, recorrido y contenido del comentario son obligatorios.');
-    END IF;
+-- PROPÓSITO: Agrega una observación o nota médica sobre la evolución de un paciente internado durante un recorrido.
+create or replace procedure sp_registrar_comentario (
+   p_id_internacion in number,
+   p_id_recorrido   in number,
+   p_contenido      in varchar2,
+   p_id_comentario  out number
+) as
+begin
+   if p_id_internacion is null
+   or p_id_recorrido is null
+   or trim(p_contenido) is null then
+      raise_application_error(
+         -20043,
+         'Regla de negocio: InternaciÃ³n, recorrido y contenido del comentario son obligatorios.'
+      );
+   end if;
 
-    INSERT INTO COMENTARIO (contenido, id_internacion, id_recorrido)
-    VALUES (TRIM(p_contenido), p_id_internacion, p_id_recorrido)
-    RETURNING id_comentario INTO p_id_comentario;
+   insert into comentario (
+      contenido,
+      id_internacion,
+      id_recorrido
+   ) values
+      ( trim(p_contenido),
+        p_id_internacion,
+        p_id_recorrido )
+   returning id_comentario into p_id_comentario;
 
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_registrar_comentario;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_registrar_comentario;
 /
 
--- 18. Eliminar comentario mÃ©dico
-CREATE OR REPLACE PROCEDURE sp_eliminar_comentario (
-    p_id_comentario IN NUMBER
-) AS
-BEGIN
-    DELETE FROM COMENTARIO WHERE id_comentario = p_id_comentario;
+-- PROPÓSITO: Elimina un comentario médico registrado previamente.
+create or replace procedure sp_eliminar_comentario (
+   p_id_comentario in number
+) as
+begin
+   delete from comentario
+    where id_comentario = p_id_comentario;
 
-    IF SQL%ROWCOUNT = 0 THEN
-        RAISE_APPLICATION_ERROR(-20044, 'Regla de negocio: El comentario #' || p_id_comentario || ' no existe en la base de datos.');
-    END IF;
+   if sql%rowcount = 0 then
+      raise_application_error(
+         -20044,
+         'Regla de negocio: El comentario #'
+         || p_id_comentario
+         || ' no existe en la base de datos.'
+      );
+   end if;
 
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_eliminar_comentario;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_eliminar_comentario;
 /
 
--- 19. Consultar internaciones activas asociadas a la ronda de un recorrido
-CREATE OR REPLACE PROCEDURE sp_internaciones_de_recorrido (
-    p_id_recorrido   IN NUMBER,
-    p_info_ronda     OUT SYS_REFCURSOR,
-    p_internaciones  OUT SYS_REFCURSOR
-) AS
-    v_id_ronda NUMBER(7);
-BEGIN
-    OPEN p_info_ronda FOR
-        SELECT r.id_ronda, ro.dia_semana, ro.turno
-        FROM RECORRIDO r
-        LEFT JOIN RONDA ro ON r.id_ronda = ro.id_ronda
-        WHERE r.id_recorrido = p_id_recorrido;
+-- PROPÓSITO: Obtiene las internaciones de los pacientes internados en las habitaciones que corresponden a la ronda del recorrido.
+create or replace procedure sp_internaciones_de_recorrido (
+   p_id_recorrido  in number,
+   p_info_ronda    out sys_refcursor,
+   p_internaciones out sys_refcursor
+) as
+   v_id_ronda number(7);
+begin
+   open p_info_ronda for select r.id_ronda,
+                                ro.dia_semana,
+                                ro.turno
+     from recorrido r
+     left join ronda ro
+   on r.id_ronda = ro.id_ronda
+    where r.id_recorrido = p_id_recorrido;
 
-    BEGIN
-        SELECT id_ronda INTO v_id_ronda
-        FROM RECORRIDO
-        WHERE id_recorrido = p_id_recorrido;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            v_id_ronda := NULL;
-    END;
+   begin
+      select id_ronda
+        into v_id_ronda
+        from recorrido
+       where id_recorrido = p_id_recorrido;
+   exception
+      when no_data_found then
+         v_id_ronda := null;
+   end;
 
-    OPEN p_internaciones FOR
-        SELECT i.id_internacion,
-               p.nombre,
-               p.apellido,
-               i.numero_de_DNI,
-               pos.id_habitacion,
-               pos.nro_cama,
-               COALESCE(s.nombre, 'General') AS sector,
-               TO_CHAR(i.fecha_inicio, 'DD/MM/YYYY HH24:MI') AS inicio_fmt
-        FROM INTERNACION i
-        JOIN PACIENTE pac ON i.numero_de_DNI = pac.numero_de_DNI
-        JOIN PERSONA p ON pac.numero_de_DNI = p.numero_de_DNI
-        JOIN (
-            SELECT p1.id_internacion, p1.id_habitacion, p1.nro_cama
-            FROM POSEE p1
-            INNER JOIN (
-                SELECT id_internacion, MAX(fechaHora) AS max_fh
-                FROM POSEE
-                GROUP BY id_internacion
-            ) p2 ON p1.id_internacion = p2.id_internacion AND p1.fechaHora = p2.max_fh
-        ) pos ON i.id_internacion = pos.id_internacion
-        JOIN COMPUESTA_POR cp ON pos.id_habitacion = cp.id_habitacion AND cp.id_ronda = v_id_ronda
-        JOIN HABITACION h ON pos.id_habitacion = h.id_habitacion
-        LEFT JOIN SECTOR s ON h.id_sector = s.id_sector
-        WHERE i.fecha_fin IS NULL
-        ORDER BY pos.id_habitacion, pos.nro_cama;
-END sp_internaciones_de_recorrido;
+   open p_internaciones for select i.id_internacion,
+                                   p.nombre,
+                                   p.apellido,
+                                   i.numero_de_dni,
+                                   pos.id_habitacion,
+                                   pos.nro_cama,
+                                   coalesce(
+                                      s.nombre,
+                                      'General'
+                                   ) as sector,
+                                   to_char(
+                                      i.fecha_inicio,
+                                      'DD/MM/YYYY HH24:MI'
+                                   ) as inicio_fmt
+     from internacion i
+     join paciente pac
+   on i.numero_de_dni = pac.numero_de_dni
+     join persona p
+   on pac.numero_de_dni = p.numero_de_dni
+     join (
+      select p1.id_internacion,
+             p1.id_habitacion,
+             p1.nro_cama
+        from posee p1
+       inner join (
+         select id_internacion,
+                max(fechahora) as max_fh
+           from posee
+          group by id_internacion
+      ) p2
+      on p1.id_internacion = p2.id_internacion
+         and p1.fechahora = p2.max_fh
+   ) pos
+   on i.id_internacion = pos.id_internacion
+     join compuesta_por cp
+   on pos.id_habitacion = cp.id_habitacion
+      and cp.id_ronda = v_id_ronda
+     join habitacion h
+   on pos.id_habitacion = h.id_habitacion
+     left join sector s
+   on h.id_sector = s.id_sector
+    where i.fecha_fin is null
+    order by pos.id_habitacion,
+             pos.nro_cama;
+end sp_internaciones_de_recorrido;
 /
 
 
@@ -1979,440 +2895,685 @@ END sp_internaciones_de_recorrido;
 -- STORED PROCEDURES DE CONSULTA Y LISTADO (3 TIERS / DESACOPLAMIENTO FRONTEND)
 -- -----------------------------------------------------------------------------
 
-CREATE OR REPLACE PROCEDURE sp_listar_internaciones_activas (
-    p_cur OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT i.id_internacion, p.nombre, p.apellido, i.numero_de_DNI
-        FROM INTERNACION i
-        JOIN PERSONA p ON i.numero_de_DNI = p.numero_de_DNI
-        WHERE i.fecha_fin IS NULL
-        ORDER BY i.id_internacion DESC;
-END sp_listar_internaciones_activas;
+-- PROPÓSITO: Devuelve el listado completo de todos los pacientes internados actualmente en el hospital.
+create or replace procedure sp_listar_internaciones_activas (
+   p_cur out sys_refcursor
+) as
+begin
+   open p_cur for select i.id_internacion,
+                         p.nombre,
+                         p.apellido,
+                         i.numero_de_dni
+     from internacion i
+     join persona p
+   on i.numero_de_dni = p.numero_de_dni
+    where i.fecha_fin is null
+    order by i.id_internacion desc;
+end sp_listar_internaciones_activas;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_pacientes (
-    p_cur OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT p.numero_de_DNI, pr.apellido, pr.nombre, p.sexo, TO_CHAR(p.fecha_de_nacimiento, 'DD/MM/YYYY')
-        FROM PACIENTE p
-        JOIN PERSONA pr ON p.numero_de_DNI = pr.numero_de_DNI
-        ORDER BY pr.apellido, pr.nombre;
-END sp_listar_pacientes;
+-- PROPÓSITO: Devuelve la lista general de pacientes registrados con sus datos personales.
+create or replace procedure sp_listar_pacientes (
+   p_cur out sys_refcursor
+) as
+begin
+   open p_cur for select p.numero_de_dni,
+                         pr.apellido,
+                         pr.nombre,
+                         p.sexo,
+                         to_char(
+                            p.fecha_de_nacimiento,
+                            'DD/MM/YYYY'
+                         )
+     from paciente p
+     join persona pr
+   on p.numero_de_dni = pr.numero_de_dni
+    order by pr.apellido,
+             pr.nombre;
+end sp_listar_pacientes;
 /
 
-CREATE OR REPLACE PROCEDURE sp_obtener_foto_medico (
-    p_matricula IN VARCHAR2,
-    p_cur       OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT foto
-        FROM MEDICO
-        WHERE numero_de_matricula = p_matricula;
-END sp_obtener_foto_medico;
+-- PROPÓSITO: Obtiene la fotografía digital registrada de un médico.
+create or replace procedure sp_obtener_foto_medico (
+   p_matricula in varchar2,
+   p_cur       out sys_refcursor
+) as
+begin
+   open p_cur for select foto
+     from medico
+    where numero_de_matricula = p_matricula;
+end sp_obtener_foto_medico;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_medicos (
-    p_cur OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT m.numero_de_matricula, m.numero_de_DNI, pr.apellido, pr.nombre, m.CUIL, m.guardias_max,
-               CASE WHEN m.foto IS NOT NULL THEN 'Sí' ELSE 'No' END AS tiene_foto
-        FROM MEDICO m
-        JOIN PERSONA pr ON m.numero_de_DNI = pr.numero_de_DNI
-        ORDER BY pr.apellido, pr.nombre;
-END sp_listar_medicos;
+-- PROPÓSITO: Devuelve el listado de médicos con sus datos personales, matrícula y estado.
+create or replace procedure sp_listar_medicos (
+   p_cur out sys_refcursor
+) as
+begin
+   open p_cur for select m.numero_de_matricula,
+                         m.numero_de_dni,
+                         pr.apellido,
+                         pr.nombre,
+                         m.cuil,
+                         m.guardias_max,
+                         case
+                            when m.foto is not null then
+                               'Sí'
+                            else
+                               'No'
+                         end as tiene_foto
+     from medico m
+     join persona pr
+   on m.numero_de_dni = pr.numero_de_dni
+    order by pr.apellido,
+             pr.nombre;
+end sp_listar_medicos;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_medicos_combo (
-    p_cur OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT m.numero_de_matricula, p.apellido, p.nombre
-        FROM MEDICO m
-        JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
-        ORDER BY p.apellido, p.nombre;
-END sp_listar_medicos_combo;
+-- PROPÓSITO: Devuelve una lista simplificada de médicos con matrícula, nombre y apellido para menús desplegables.
+create or replace procedure sp_listar_medicos_combo (
+   p_cur out sys_refcursor
+) as
+begin
+   open p_cur for select m.numero_de_matricula,
+                         p.apellido,
+                         p.nombre
+     from medico m
+     join persona p
+   on m.numero_de_dni = p.numero_de_dni
+    order by p.apellido,
+             p.nombre;
+end sp_listar_medicos_combo;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_sectores_combo (
-    p_cur OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT id_sector, nombre
-        FROM SECTOR
-        ORDER BY id_sector;
-END sp_listar_sectores_combo;
+-- PROPÓSITO: Devuelve la lista de sectores hospitalarios para menús desplegables.
+create or replace procedure sp_listar_sectores_combo (
+   p_cur out sys_refcursor
+) as
+begin
+   open p_cur for select id_sector,
+                         nombre
+     from sector
+    order by id_sector;
+end sp_listar_sectores_combo;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_sectores (
-    p_cur OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT s.id_sector, s.nombre,
-               (SELECT COUNT(*) FROM HABITACION h WHERE h.id_sector = s.id_sector) AS cant_habs
-        FROM SECTOR s
-        ORDER BY s.id_sector;
-END sp_listar_sectores;
+-- PROPÓSITO: Devuelve el listado de sectores hospitalarios con sus identificadores.
+create or replace procedure sp_listar_sectores (
+   p_cur out sys_refcursor
+) as
+begin
+   open p_cur for select s.id_sector,
+                         s.nombre,
+                         (
+                            select count(*)
+                              from habitacion h
+                             where h.id_sector = s.id_sector
+                         ) as cant_habs
+     from sector s
+    order by s.id_sector;
+end sp_listar_sectores;
 /
 
-CREATE OR REPLACE PROCEDURE sp_obtener_rondas_habitacion (
-    p_id_habitacion IN NUMBER,
-    p_cur           OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT r.dia_semana, r.turno, r.id_ronda
-        FROM COMPUESTA_POR cp
-        JOIN RONDA r ON cp.id_ronda = r.id_ronda
-        WHERE cp.id_habitacion = p_id_habitacion
-        ORDER BY CASE r.dia_semana 
-            WHEN 'LUNES' THEN 1 
-            WHEN 'MARTES' THEN 2 
-            WHEN 'MIERCOLES' THEN 3 
-            WHEN 'JUEVES' THEN 4 
-            WHEN 'VIERNES' THEN 5 
-            WHEN 'SABADO' THEN 6 
-            WHEN 'DOMINGO' THEN 7 
-            ELSE 8 END;
-END sp_obtener_rondas_habitacion;
+-- PROPÓSITO: Obtiene las rondas médicas que tienen a su cargo la supervisión de una habitación.
+create or replace procedure sp_obtener_rondas_habitacion (
+   p_id_habitacion in number,
+   p_cur           out sys_refcursor
+) as
+begin
+   open p_cur for select r.dia_semana,
+                         r.turno,
+                         r.id_ronda
+     from compuesta_por cp
+     join ronda r
+   on cp.id_ronda = r.id_ronda
+    where cp.id_habitacion = p_id_habitacion
+    order by
+      case r.dia_semana
+         when 'LUNES'     then
+            1
+         when 'MARTES'    then
+            2
+         when 'MIERCOLES' then
+            3
+         when 'JUEVES'    then
+            4
+         when 'VIERNES'   then
+            5
+         when 'SABADO'    then
+            6
+         when 'DOMINGO'   then
+            7
+         else
+            8
+      end;
+end sp_obtener_rondas_habitacion;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_habitaciones (
-    p_cur OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT h.id_habitacion, h.piso, h.orientacion, s.nombre,
-               (SELECT COUNT(*) FROM COMPUESTA_POR cp WHERE cp.id_habitacion = h.id_habitacion) AS cant_rondas
-        FROM HABITACION h
-        JOIN SECTOR s ON h.id_sector = s.id_sector
-        ORDER BY h.id_habitacion;
-END sp_listar_habitaciones;
+-- PROPÓSITO: Devuelve la lista de habitaciones con su orientación, piso y sector al que pertenecen.
+create or replace procedure sp_listar_habitaciones (
+   p_cur out sys_refcursor
+) as
+begin
+   open p_cur for select h.id_habitacion,
+                         h.piso,
+                         h.orientacion,
+                         s.nombre,
+                         (
+                            select count(*)
+                              from compuesta_por cp
+                             where cp.id_habitacion = h.id_habitacion
+                         ) as cant_rondas
+     from habitacion h
+     join sector s
+   on h.id_sector = s.id_sector
+    order by h.id_habitacion;
+end sp_listar_habitaciones;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_todas_camas (
-    p_cur OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT c.id_habitacion, c.nro_cama, c.estado, s.nombre
-        FROM CAMA c
-        JOIN HABITACION h ON c.id_habitacion = h.id_habitacion
-        JOIN SECTOR s ON h.id_sector = s.id_sector
-        ORDER BY c.id_habitacion, c.nro_cama;
-END sp_listar_todas_camas;
+-- PROPÓSITO: Devuelve el listado general de todas las camas del hospital y su estado actual.
+create or replace procedure sp_listar_todas_camas (
+   p_cur out sys_refcursor
+) as
+begin
+   open p_cur for select c.id_habitacion,
+                         c.nro_cama,
+                         c.estado,
+                         s.nombre
+     from cama c
+     join habitacion h
+   on c.id_habitacion = h.id_habitacion
+     join sector s
+   on h.id_sector = s.id_sector
+    order by c.id_habitacion,
+             c.nro_cama;
+end sp_listar_todas_camas;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_especialidades_medico (
-    p_matricula IN VARCHAR2,
-    p_cur       OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT e.id_especialidad, e.nombre, t.dispuesto
-        FROM ESPECIALIDAD e
-        LEFT JOIN TIENE t
-               ON e.id_especialidad = t.id_especialidad
-              AND t.numero_de_matricula = p_matricula
-        ORDER BY CASE
-                     WHEN UPPER(t.dispuesto) = 'SI' THEN 0
-                     WHEN UPPER(t.dispuesto) = 'NO' THEN 1
-                     ELSE 2
-                 END,
-                 e.nombre;
-END sp_listar_especialidades_medico;
+-- PROPÓSITO: Devuelve las especialidades que posee un médico y si está dispuesto a hacer guardias en cada una.
+create or replace procedure sp_listar_especialidades_medico (
+   p_matricula in varchar2,
+   p_cur       out sys_refcursor
+) as
+begin
+   open p_cur for select e.id_especialidad,
+                         e.nombre,
+                         t.dispuesto
+     from especialidad e
+     left join tiene t
+   on e.id_especialidad = t.id_especialidad
+      and t.numero_de_matricula = p_matricula
+    order by
+      case
+         when upper(t.dispuesto) = 'SI' then
+            0
+         when upper(t.dispuesto) = 'NO' then
+            1
+         else
+            2
+      end,
+      e.nombre;
+end sp_listar_especialidades_medico;
 /
 
-CREATE OR REPLACE PROCEDURE sp_verificar_medico_especialidad (
-    p_matricula       IN VARCHAR2,
-    p_id_especialidad IN NUMBER,
-    p_resultado       OUT VARCHAR2
-) AS
-    v_dispuesto VARCHAR2(2);
-BEGIN
-    SELECT dispuesto INTO v_dispuesto
-    FROM TIENE
-    WHERE numero_de_matricula = p_matricula
-      AND id_especialidad = p_id_especialidad;
-      
-    IF UPPER(TRIM(v_dispuesto)) = 'SI' THEN
-        p_resultado := 'ok';
-    ELSE
-        p_resultado := 'no_dispuesto';
-    END IF;
-EXCEPTION
-    WHEN NO_DATA_FOUND THEN
-        p_resultado := 'no_registrada';
-END sp_verificar_medico_especialidad;
+-- PROPÓSITO: Indica si un médico posee una especialidad determinada y si está dispuesto a realizar guardias en ella.
+create or replace procedure sp_verificar_medico_especialidad (
+   p_matricula       in varchar2,
+   p_id_especialidad in number,
+   p_resultado       out varchar2
+) as
+   v_dispuesto varchar2(2);
+begin
+   select dispuesto
+     into v_dispuesto
+     from tiene
+    where numero_de_matricula = p_matricula
+      and id_especialidad = p_id_especialidad;
+
+   if upper(trim(v_dispuesto)) = 'SI' then
+      p_resultado := 'ok';
+   else
+      p_resultado := 'no_dispuesto';
+   end if;
+exception
+   when no_data_found then
+      p_resultado := 'no_registrada';
+end sp_verificar_medico_especialidad;
 /
 
--- 22 bis. Asignar o actualizar especialidad de un médico (tabla TIENE)
-CREATE OR REPLACE PROCEDURE sp_asignar_especialidad_medico (
-    p_matricula       IN VARCHAR2,
-    p_id_especialidad IN NUMBER,
-    p_dispuesto       IN VARCHAR2 DEFAULT 'Si'
-) AS
-    v_cant NUMBER;
-    v_disp VARCHAR2(10);
-BEGIN
-    IF p_matricula IS NULL OR p_id_especialidad IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20060, 'Regla de negocio: La matrícula del médico y la especialidad son obligatorias.');
-    END IF;
+-- PROPÓSITO: Asocia una especialidad a un médico o actualiza su disposición para hacer guardias en ella.
+create or replace procedure sp_asignar_especialidad_medico (
+   p_matricula       in varchar2,
+   p_id_especialidad in number,
+   p_dispuesto       in varchar2 default 'Si'
+) as
+   v_cant number;
+   v_disp varchar2(10);
+begin
+   if p_matricula is null
+   or p_id_especialidad is null then
+      raise_application_error(
+         -20060,
+         'Regla de negocio: La matrícula del médico y la especialidad son obligatorias.'
+      );
+   end if;
 
-    v_disp := INITCAP(TRIM(NVL(p_dispuesto, 'Si')));
-    IF v_disp NOT IN ('Si', 'No') THEN
-        RAISE_APPLICATION_ERROR(-20061, 'Regla de negocio: El campo dispuesto debe ser Si o No.');
-    END IF;
+   v_disp := initcap(trim(nvl(
+      p_dispuesto,
+      'Si'
+   )));
+   if v_disp not in ( 'Si',
+                      'No' ) then
+      raise_application_error(
+         -20061,
+         'Regla de negocio: El campo dispuesto debe ser Si o No.'
+      );
+   end if;
 
-    SELECT COUNT(*) INTO v_cant
-    FROM TIENE
-    WHERE numero_de_matricula = p_matricula
-      AND id_especialidad = p_id_especialidad;
+   select count(*)
+     into v_cant
+     from tiene
+    where numero_de_matricula = p_matricula
+      and id_especialidad = p_id_especialidad;
 
-    IF v_cant = 0 THEN
-        INSERT INTO TIENE (numero_de_matricula, id_especialidad, dispuesto)
-        VALUES (p_matricula, p_id_especialidad, v_disp);
-    ELSE
-        UPDATE TIENE
-        SET dispuesto = v_disp
-        WHERE numero_de_matricula = p_matricula
-          AND id_especialidad = p_id_especialidad;
-    END IF;
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_asignar_especialidad_medico;
+   if v_cant = 0 then
+      insert into tiene (
+         numero_de_matricula,
+         id_especialidad,
+         dispuesto
+      ) values
+         ( p_matricula,
+           p_id_especialidad,
+           v_disp );
+   else
+      update tiene
+         set
+         dispuesto = v_disp
+       where numero_de_matricula = p_matricula
+         and id_especialidad = p_id_especialidad;
+   end if;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_asignar_especialidad_medico;
 /
 
--- 22 ter. Quitar especialidad de un médico (tabla TIENE)
-CREATE OR REPLACE PROCEDURE sp_quitar_especialidad_medico (
-    p_matricula       IN VARCHAR2,
-    p_id_especialidad IN NUMBER
-) AS
-BEGIN
-    IF p_matricula IS NULL OR p_id_especialidad IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20060, 'Regla de negocio: La matrícula y la especialidad son obligatorias.');
-    END IF;
+-- PROPÓSITO: Desvincula una especialidad de la ficha de un médico.
+create or replace procedure sp_quitar_especialidad_medico (
+   p_matricula       in varchar2,
+   p_id_especialidad in number
+) as
+begin
+   if p_matricula is null
+   or p_id_especialidad is null then
+      raise_application_error(
+         -20060,
+         'Regla de negocio: La matrícula y la especialidad son obligatorias.'
+      );
+   end if;
 
-    DELETE FROM TIENE
-    WHERE numero_de_matricula = p_matricula
-      AND id_especialidad = p_id_especialidad;
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END sp_quitar_especialidad_medico;
+   delete from tiene
+    where numero_de_matricula = p_matricula
+      and id_especialidad = p_id_especialidad;
+   commit;
+exception
+   when others then
+      rollback;
+      raise;
+end sp_quitar_especialidad_medico;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_guardias (
-    p_cur OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT g.id_guardia,
-               TO_CHAR(g.fecha, 'DD/MM/YYYY'),
-               g.turno,
-               COALESCE(
-                   (SELECT LISTAGG(p.apellido || ' (' || cp.numero_de_matricula || ' - ' || e.nombre || ')', ', ')
-                           WITHIN GROUP (ORDER BY p.apellido, e.nombre)
-                    FROM CUBIERTA_POR cp
-                    JOIN MEDICO m ON cp.numero_de_matricula = m.numero_de_matricula
-                    JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
-                    JOIN ESPECIALIDAD e ON cp.id_especialidad = e.id_especialidad
-                    WHERE cp.id_guardia = g.id_guardia),
-                   'Sin asignar'
-               ) AS medicos_asignados
-        FROM GUARDIA g
-        ORDER BY g.fecha DESC, g.id_guardia DESC;
-END sp_listar_guardias;
+-- PROPÓSITO: Devuelve el listado de guardias programadas con su fecha, turno y equipo médico asignado.
+create or replace procedure sp_listar_guardias (
+   p_cur out sys_refcursor
+) as
+begin
+   open p_cur for select g.id_guardia,
+                         to_char(
+                            g.fecha,
+                            'DD/MM/YYYY'
+                         ),
+                         g.turno,
+                         coalesce(
+                            (
+                               select
+                                  listagg(p.apellido
+                                          || ' ('
+                                          || cp.numero_de_matricula
+                                          || ' - '
+                                          || e.nombre
+                                          || ')',
+                                          ', ') within group(
+                                   order by p.apellido,
+                                            e.nombre)
+                                 from cubierta_por cp
+                                 join medico m
+                               on cp.numero_de_matricula = m.numero_de_matricula
+                                 join persona p
+                               on m.numero_de_dni = p.numero_de_dni
+                                 join especialidad e
+                               on cp.id_especialidad = e.id_especialidad
+                                where cp.id_guardia = g.id_guardia
+                            ),
+                            'Sin asignar'
+                         ) as medicos_asignados
+     from guardia g
+    order by g.fecha desc,
+             g.id_guardia desc;
+end sp_listar_guardias;
 /
 
-CREATE OR REPLACE PROCEDURE sp_obtener_datos_guardia (
-    p_id_guardia   IN NUMBER,
-    p_cur_guardia  OUT SYS_REFCURSOR,
-    p_cur_medicos  OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur_guardia FOR
-        SELECT TO_CHAR(fecha, 'DD/MM/YYYY'), turno
-        FROM GUARDIA
-        WHERE id_guardia = p_id_guardia;
+-- PROPÓSITO: Obtiene la fecha, turno y la lista de médicos de una guardia puntual.
+create or replace procedure sp_obtener_datos_guardia (
+   p_id_guardia  in number,
+   p_cur_guardia out sys_refcursor,
+   p_cur_medicos out sys_refcursor
+) as
+begin
+   open p_cur_guardia for select to_char(
+      fecha,
+      'DD/MM/YYYY'
+   ),
+                                 turno
+     from guardia
+    where id_guardia = p_id_guardia;
 
-    OPEN p_cur_medicos FOR
-        SELECT cp.numero_de_matricula, p.apellido, p.nombre, cp.id_especialidad, e.nombre
-        FROM CUBIERTA_POR cp
-        JOIN MEDICO m ON cp.numero_de_matricula = m.numero_de_matricula
-        JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
-        JOIN ESPECIALIDAD e ON cp.id_especialidad = e.id_especialidad
-        WHERE cp.id_guardia = p_id_guardia
-        ORDER BY p.apellido, e.nombre;
-END sp_obtener_datos_guardia;
+   open p_cur_medicos for select cp.numero_de_matricula,
+                                 p.apellido,
+                                 p.nombre,
+                                 cp.id_especialidad,
+                                 e.nombre
+     from cubierta_por cp
+     join medico m
+   on cp.numero_de_matricula = m.numero_de_matricula
+     join persona p
+   on m.numero_de_dni = p.numero_de_dni
+     join especialidad e
+   on cp.id_especialidad = e.id_especialidad
+    where cp.id_guardia = p_id_guardia
+    order by p.apellido,
+             e.nombre;
+end sp_obtener_datos_guardia;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_rondas_combo (
-    p_cur OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT id_ronda, turno, dia_semana
-        FROM RONDA
-        ORDER BY id_ronda;
-END sp_listar_rondas_combo;
+-- PROPÓSITO: Devuelve las rondas médicas con su día y turno para selectores desplegables.
+create or replace procedure sp_listar_rondas_combo (
+   p_cur out sys_refcursor
+) as
+begin
+   open p_cur for select id_ronda,
+                         turno,
+                         dia_semana
+     from ronda
+    order by id_ronda;
+end sp_listar_rondas_combo;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_recorridos (
-    p_cur OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT r.id_recorrido,
-               TO_CHAR(r.fecha, 'DD/MM/YYYY') as fecha_fmt,
-               r.numero_de_matricula,
-               p.apellido || ', ' || p.nombre as medico,
-               r.id_ronda,
-               COALESCE(TO_CHAR(ro.turno), 'N/A') as turno,
-               COALESCE(ro.dia_semana, 'N/A') as dia,
-               (SELECT COUNT(*) FROM COMENTARIO c WHERE c.id_recorrido = r.id_recorrido) as cant_com
-        FROM RECORRIDO r
-        JOIN MEDICO m ON r.numero_de_matricula = m.numero_de_matricula
-        JOIN PERSONA p ON m.numero_de_DNI = p.numero_de_DNI
-        LEFT JOIN RONDA ro ON r.id_ronda = ro.id_ronda
-        ORDER BY r.fecha DESC, r.id_recorrido DESC;
-END sp_listar_recorridos;
+-- PROPÓSITO: Devuelve el historial de recorridos médicos efectuados con su ronda, fecha y profesional.
+create or replace procedure sp_listar_recorridos (
+   p_cur out sys_refcursor
+) as
+begin
+   open p_cur for select r.id_recorrido,
+                         to_char(
+                            r.fecha,
+                            'DD/MM/YYYY'
+                         ) as fecha_fmt,
+                         r.numero_de_matricula,
+                         p.apellido
+                         || ', '
+                         || p.nombre as medico,
+                         r.id_ronda,
+                         coalesce(
+                            to_char(ro.turno),
+                            'N/A'
+                         ) as turno,
+                         coalesce(
+                            ro.dia_semana,
+                            'N/A'
+                         ) as dia,
+                         (
+                            select count(*)
+                              from comentario c
+                             where c.id_recorrido = r.id_recorrido
+                         ) as cant_com
+     from recorrido r
+     join medico m
+   on r.numero_de_matricula = m.numero_de_matricula
+     join persona p
+   on m.numero_de_dni = p.numero_de_dni
+     left join ronda ro
+   on r.id_ronda = ro.id_ronda
+    order by r.fecha desc,
+             r.id_recorrido desc;
+end sp_listar_recorridos;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_recorridos_medico (
-    p_matricula IN VARCHAR2,
-    p_cur       OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT r.id_recorrido,
-               TO_CHAR(r.fecha, 'DD/MM/YYYY') as fecha_fmt,
-               r.id_ronda,
-               COALESCE(ro.dia_semana, 'N/A') as dia,
-               COALESCE(TO_CHAR(ro.turno), 'N/A') as turno,
-               (SELECT COUNT(*) FROM COMENTARIO c WHERE c.id_recorrido = r.id_recorrido) as cant_com
-        FROM RECORRIDO r
-        LEFT JOIN RONDA ro ON r.id_ronda = ro.id_ronda
-        WHERE r.numero_de_matricula = p_matricula
-        ORDER BY r.fecha DESC, r.id_recorrido DESC;
-END sp_listar_recorridos_medico;
+-- PROPÓSITO: Devuelve los recorridos de ronda realizados por un médico en particular.
+create or replace procedure sp_listar_recorridos_medico (
+   p_matricula in varchar2,
+   p_cur       out sys_refcursor
+) as
+begin
+   open p_cur for select r.id_recorrido,
+                         to_char(
+                            r.fecha,
+                            'DD/MM/YYYY'
+                         ) as fecha_fmt,
+                         r.id_ronda,
+                         coalesce(
+                            ro.dia_semana,
+                            'N/A'
+                         ) as dia,
+                         coalesce(
+                            to_char(ro.turno),
+                            'N/A'
+                         ) as turno,
+                         (
+                            select count(*)
+                              from comentario c
+                             where c.id_recorrido = r.id_recorrido
+                         ) as cant_com
+     from recorrido r
+     left join ronda ro
+   on r.id_ronda = ro.id_ronda
+    where r.numero_de_matricula = p_matricula
+    order by r.fecha desc,
+             r.id_recorrido desc;
+end sp_listar_recorridos_medico;
 /
 
-CREATE OR REPLACE PROCEDURE sp_listar_comentarios_recorrido (
-    p_id_recorrido IN NUMBER,
-    p_cur          OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cur FOR
-        SELECT c.id_comentario,
-               c.id_internacion,
-               p.apellido || ', ' || p.nombre AS paciente,
-               c.contenido
-        FROM COMENTARIO c
-        JOIN INTERNACION i ON c.id_internacion = i.id_internacion
-        JOIN PACIENTE pac ON i.numero_de_DNI = pac.numero_de_DNI
-        JOIN PERSONA p ON pac.numero_de_DNI = p.numero_de_DNI
-        WHERE c.id_recorrido = p_id_recorrido
-        ORDER BY c.id_comentario DESC;
-END sp_listar_comentarios_recorrido;
+-- PROPÓSITO: Devuelve las notas y comentarios médicos asentados durante un recorrido específico.
+create or replace procedure sp_listar_comentarios_recorrido (
+   p_id_recorrido in number,
+   p_cur          out sys_refcursor
+) as
+begin
+   open p_cur for select c.id_comentario,
+                         c.id_internacion,
+                         p.apellido
+                         || ', '
+                         || p.nombre as paciente,
+                         c.contenido
+     from comentario c
+     join internacion i
+   on c.id_internacion = i.id_internacion
+     join paciente pac
+   on i.numero_de_dni = pac.numero_de_dni
+     join persona p
+   on pac.numero_de_dni = p.numero_de_dni
+    where c.id_recorrido = p_id_recorrido
+    order by c.id_comentario desc;
+end sp_listar_comentarios_recorrido;
+/
+-- PROPÓSITO: Estandariza los documentos en la tabla de personas completando con un cero inicial si fueron ingresados con menor longitud.
+create or replace trigger trg_normalizar_dni_persona before
+   insert or update of numero_de_dni on persona
+   for each row
+begin
+   if
+      :new.numero_de_dni is not null
+      and regexp_like(
+         trim(:new.numero_de_dni),
+         '^[0-9]{7}$'
+      )
+   then
+      :new.numero_de_dni := lpad(
+         trim(:new.numero_de_dni),
+         8,
+         '0'
+      );
+   end if;
+end;
+/
+
+-- PROPÓSITO: Estandariza los documentos en la tabla de pacientes completando con un cero inicial si fueron ingresados con menor longitud.
+create or replace trigger trg_normalizar_dni_paciente before
+   insert or update of numero_de_dni on paciente
+   for each row
+begin
+   if
+      :new.numero_de_dni is not null
+      and regexp_like(
+         trim(:new.numero_de_dni),
+         '^[0-9]{7}$'
+      )
+   then
+      :new.numero_de_dni := lpad(
+         trim(:new.numero_de_dni),
+         8,
+         '0'
+      );
+   end if;
+end;
+/
+
+-- PROPÓSITO: Estandariza los documentos en la tabla de médicos completando con un cero inicial si fueron ingresados con menor longitud.
+create or replace trigger trg_normalizar_dni_medico before
+   insert or update of numero_de_dni on medico
+   for each row
+begin
+   if
+      :new.numero_de_dni is not null
+      and regexp_like(
+         trim(:new.numero_de_dni),
+         '^[0-9]{7}$'
+      )
+   then
+      :new.numero_de_dni := lpad(
+         trim(:new.numero_de_dni),
+         8,
+         '0'
+      );
+   end if;
+end;
+/
+
+-- PROPÓSITO: Estandariza los documentos en las internaciones completando con un cero inicial si fueron ingresados con menor longitud.
+create or replace trigger trg_normalizar_dni_internacion before
+   insert or update of numero_de_dni on internacion
+   for each row
+begin
+   if
+      :new.numero_de_dni is not null
+      and regexp_like(
+         trim(:new.numero_de_dni),
+         '^[0-9]{7}$'
+      )
+   then
+      :new.numero_de_dni := lpad(
+         trim(:new.numero_de_dni),
+         8,
+         '0'
+      );
+   end if;
+end;
 /
 
 
 -- =============================================================================
 -- PERMISOS Y SINONIMOS PUBLICOS PARA STORED PROCEDURES
 -- =============================================================================
-GRANT EXECUTE ON sp_ocupar_cama_posee            TO PUBLIC;
-GRANT EXECUTE ON listar_camas_disponibles         TO PUBLIC;
-GRANT EXECUTE ON listar_comentarios_internacion   TO PUBLIC;
-GRANT EXECUTE ON sp_registrar_paciente           TO PUBLIC;
-GRANT EXECUTE ON sp_registrar_medico             TO PUBLIC;
-GRANT EXECUTE ON sp_crear_sector                 TO PUBLIC;
-GRANT EXECUTE ON sp_crear_habitacion_con_rondas   TO PUBLIC;
-GRANT EXECUTE ON sp_crear_cama                   TO PUBLIC;
-GRANT EXECUTE ON sp_registrar_internacion        TO PUBLIC;
-GRANT EXECUTE ON sp_dar_alta_internacion         TO PUBLIC;
-GRANT EXECUTE ON sp_obtener_datos_alta           TO PUBLIC;
-GRANT EXECUTE ON sp_consultar_cama_actual        TO PUBLIC;
-GRANT EXECUTE ON sp_crear_y_asignar_guardia      TO PUBLIC;
-GRANT EXECUTE ON sp_modificar_guardia            TO PUBLIC;
-GRANT EXECUTE ON sp_eliminar_guardia             TO PUBLIC;
-GRANT EXECUTE ON sp_registrar_recorrido          TO PUBLIC;
-GRANT EXECUTE ON sp_eliminar_recorrido           TO PUBLIC;
-GRANT EXECUTE ON sp_registrar_comentario         TO PUBLIC;
-GRANT EXECUTE ON sp_eliminar_comentario          TO PUBLIC;
-GRANT EXECUTE ON sp_internaciones_de_recorrido   TO PUBLIC;
-GRANT EXECUTE ON sp_listar_internaciones_activas TO PUBLIC;
-GRANT EXECUTE ON sp_listar_pacientes             TO PUBLIC;
-GRANT EXECUTE ON sp_obtener_foto_medico          TO PUBLIC;
-GRANT EXECUTE ON sp_listar_medicos               TO PUBLIC;
-GRANT EXECUTE ON sp_listar_medicos_combo         TO PUBLIC;
-GRANT EXECUTE ON sp_listar_sectores_combo        TO PUBLIC;
-GRANT EXECUTE ON sp_listar_sectores              TO PUBLIC;
-GRANT EXECUTE ON sp_obtener_rondas_habitacion    TO PUBLIC;
-GRANT EXECUTE ON sp_listar_habitaciones          TO PUBLIC;
-GRANT EXECUTE ON sp_listar_todas_camas           TO PUBLIC;
-GRANT EXECUTE ON sp_listar_especialidades_medico TO PUBLIC;
-GRANT EXECUTE ON sp_verificar_medico_especialidad TO PUBLIC;
-GRANT EXECUTE ON sp_listar_guardias              TO PUBLIC;
-GRANT EXECUTE ON sp_obtener_datos_guardia        TO PUBLIC;
-GRANT EXECUTE ON sp_listar_rondas_combo          TO PUBLIC;
-GRANT EXECUTE ON sp_listar_recorridos            TO PUBLIC;
-GRANT EXECUTE ON sp_listar_recorridos_medico     TO PUBLIC;
-GRANT EXECUTE ON sp_listar_comentarios_recorrido TO PUBLIC;
-GRANT EXECUTE ON sp_asignar_especialidad_medico  TO PUBLIC;
-GRANT EXECUTE ON sp_quitar_especialidad_medico   TO PUBLIC;
+grant execute on sp_ocupar_cama_posee to public;
+grant execute on listar_camas_disponibles to public;
+grant execute on listar_comentarios_internacion to public;
+grant execute on sp_registrar_paciente to public;
+grant execute on sp_registrar_medico to public;
+grant execute on sp_crear_sector to public;
+grant execute on sp_crear_habitacion_con_rondas to public;
+grant execute on sp_crear_cama to public;
+grant execute on sp_registrar_internacion to public;
+grant execute on sp_dar_alta_internacion to public;
+grant execute on sp_obtener_datos_alta to public;
+grant execute on sp_consultar_cama_actual to public;
+grant execute on sp_crear_y_asignar_guardia to public;
+grant execute on sp_modificar_guardia to public;
+grant execute on sp_eliminar_guardia to public;
+grant execute on sp_registrar_recorrido to public;
+grant execute on sp_eliminar_recorrido to public;
+grant execute on sp_registrar_comentario to public;
+grant execute on sp_eliminar_comentario to public;
+grant execute on sp_internaciones_de_recorrido to public;
+grant execute on sp_listar_internaciones_activas to public;
+grant execute on sp_listar_pacientes to public;
+grant execute on sp_obtener_foto_medico to public;
+grant execute on sp_listar_medicos to public;
+grant execute on sp_listar_medicos_combo to public;
+grant execute on sp_listar_sectores_combo to public;
+grant execute on sp_listar_sectores to public;
+grant execute on sp_obtener_rondas_habitacion to public;
+grant execute on sp_listar_habitaciones to public;
+grant execute on sp_listar_todas_camas to public;
+grant execute on sp_listar_especialidades_medico to public;
+grant execute on sp_verificar_medico_especialidad to public;
+grant execute on sp_listar_guardias to public;
+grant execute on sp_obtener_datos_guardia to public;
+grant execute on sp_listar_rondas_combo to public;
+grant execute on sp_listar_recorridos to public;
+grant execute on sp_listar_recorridos_medico to public;
+grant execute on sp_listar_comentarios_recorrido to public;
+grant execute on sp_asignar_especialidad_medico to public;
+grant execute on sp_quitar_especialidad_medico to public;
 
-CREATE OR REPLACE PUBLIC SYNONYM sp_ocupar_cama_posee            FOR sp_ocupar_cama_posee;
-CREATE OR REPLACE PUBLIC SYNONYM listar_camas_disponibles         FOR listar_camas_disponibles;
-CREATE OR REPLACE PUBLIC SYNONYM listar_comentarios_internacion   FOR listar_comentarios_internacion;
-CREATE OR REPLACE PUBLIC SYNONYM sp_registrar_paciente           FOR sp_registrar_paciente;
-CREATE OR REPLACE PUBLIC SYNONYM sp_registrar_medico             FOR sp_registrar_medico;
-CREATE OR REPLACE PUBLIC SYNONYM sp_crear_sector                 FOR sp_crear_sector;
-CREATE OR REPLACE PUBLIC SYNONYM sp_crear_habitacion_con_rondas   FOR sp_crear_habitacion_con_rondas;
-CREATE OR REPLACE PUBLIC SYNONYM sp_crear_cama                   FOR sp_crear_cama;
-CREATE OR REPLACE PUBLIC SYNONYM sp_registrar_internacion        FOR sp_registrar_internacion;
-CREATE OR REPLACE PUBLIC SYNONYM sp_dar_alta_internacion         FOR sp_dar_alta_internacion;
-CREATE OR REPLACE PUBLIC SYNONYM sp_obtener_datos_alta           FOR sp_obtener_datos_alta;
-CREATE OR REPLACE PUBLIC SYNONYM sp_consultar_cama_actual        FOR sp_consultar_cama_actual;
-CREATE OR REPLACE PUBLIC SYNONYM sp_crear_y_asignar_guardia      FOR sp_crear_y_asignar_guardia;
-CREATE OR REPLACE PUBLIC SYNONYM sp_modificar_guardia            FOR sp_modificar_guardia;
-CREATE OR REPLACE PUBLIC SYNONYM sp_eliminar_guardia             FOR sp_eliminar_guardia;
-CREATE OR REPLACE PUBLIC SYNONYM sp_registrar_recorrido          FOR sp_registrar_recorrido;
-CREATE OR REPLACE PUBLIC SYNONYM sp_eliminar_recorrido           FOR sp_eliminar_recorrido;
-CREATE OR REPLACE PUBLIC SYNONYM sp_registrar_comentario         FOR sp_registrar_comentario;
-CREATE OR REPLACE PUBLIC SYNONYM sp_eliminar_comentario          FOR sp_eliminar_comentario;
-CREATE OR REPLACE PUBLIC SYNONYM sp_internaciones_de_recorrido   FOR sp_internaciones_de_recorrido;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_internaciones_activas FOR sp_listar_internaciones_activas;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_pacientes             FOR sp_listar_pacientes;
-CREATE OR REPLACE PUBLIC SYNONYM sp_obtener_foto_medico          FOR sp_obtener_foto_medico;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_medicos               FOR sp_listar_medicos;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_medicos_combo         FOR sp_listar_medicos_combo;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_sectores_combo        FOR sp_listar_sectores_combo;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_sectores              FOR sp_listar_sectores;
-CREATE OR REPLACE PUBLIC SYNONYM sp_obtener_rondas_habitacion    FOR sp_obtener_rondas_habitacion;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_habitaciones          FOR sp_listar_habitaciones;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_todas_camas           FOR sp_listar_todas_camas;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_especialidades_medico FOR sp_listar_especialidades_medico;
-CREATE OR REPLACE PUBLIC SYNONYM sp_verificar_medico_especialidad FOR sp_verificar_medico_especialidad;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_guardias              FOR sp_listar_guardias;
-CREATE OR REPLACE PUBLIC SYNONYM sp_obtener_datos_guardia        FOR sp_obtener_datos_guardia;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_rondas_combo          FOR sp_listar_rondas_combo;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_recorridos            FOR sp_listar_recorridos;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_recorridos_medico     FOR sp_listar_recorridos_medico;
-CREATE OR REPLACE PUBLIC SYNONYM sp_listar_comentarios_recorrido FOR sp_listar_comentarios_recorrido;
-CREATE OR REPLACE PUBLIC SYNONYM sp_asignar_especialidad_medico  FOR sp_asignar_especialidad_medico;
-CREATE OR REPLACE PUBLIC SYNONYM sp_quitar_especialidad_medico   FOR sp_quitar_especialidad_medico;
+create or replace public synonym sp_ocupar_cama_posee for sp_ocupar_cama_posee;
+create or replace public synonym listar_camas_disponibles for listar_camas_disponibles;
+create or replace public synonym listar_comentarios_internacion for listar_comentarios_internacion;
+create or replace public synonym sp_registrar_paciente for sp_registrar_paciente;
+create or replace public synonym sp_registrar_medico for sp_registrar_medico;
+create or replace public synonym sp_crear_sector for sp_crear_sector;
+create or replace public synonym sp_crear_habitacion_con_rondas for sp_crear_habitacion_con_rondas;
+create or replace public synonym sp_crear_cama for sp_crear_cama;
+create or replace public synonym sp_registrar_internacion for sp_registrar_internacion;
+create or replace public synonym sp_dar_alta_internacion for sp_dar_alta_internacion;
+create or replace public synonym sp_obtener_datos_alta for sp_obtener_datos_alta;
+create or replace public synonym sp_consultar_cama_actual for sp_consultar_cama_actual;
+create or replace public synonym sp_crear_y_asignar_guardia for sp_crear_y_asignar_guardia;
+create or replace public synonym sp_modificar_guardia for sp_modificar_guardia;
+create or replace public synonym sp_eliminar_guardia for sp_eliminar_guardia;
+create or replace public synonym sp_registrar_recorrido for sp_registrar_recorrido;
+create or replace public synonym sp_eliminar_recorrido for sp_eliminar_recorrido;
+create or replace public synonym sp_registrar_comentario for sp_registrar_comentario;
+create or replace public synonym sp_eliminar_comentario for sp_eliminar_comentario;
+create or replace public synonym sp_internaciones_de_recorrido for sp_internaciones_de_recorrido;
+create or replace public synonym sp_listar_internaciones_activas for sp_listar_internaciones_activas;
+create or replace public synonym sp_listar_pacientes for sp_listar_pacientes;
+create or replace public synonym sp_obtener_foto_medico for sp_obtener_foto_medico;
+create or replace public synonym sp_listar_medicos for sp_listar_medicos;
+create or replace public synonym sp_listar_medicos_combo for sp_listar_medicos_combo;
+create or replace public synonym sp_listar_sectores_combo for sp_listar_sectores_combo;
+create or replace public synonym sp_listar_sectores for sp_listar_sectores;
+create or replace public synonym sp_obtener_rondas_habitacion for sp_obtener_rondas_habitacion;
+create or replace public synonym sp_listar_habitaciones for sp_listar_habitaciones;
+create or replace public synonym sp_listar_todas_camas for sp_listar_todas_camas;
+create or replace public synonym sp_listar_especialidades_medico for sp_listar_especialidades_medico;
+create or replace public synonym sp_verificar_medico_especialidad for sp_verificar_medico_especialidad;
+create or replace public synonym sp_listar_guardias for sp_listar_guardias;
+create or replace public synonym sp_obtener_datos_guardia for sp_obtener_datos_guardia;
+create or replace public synonym sp_listar_rondas_combo for sp_listar_rondas_combo;
+create or replace public synonym sp_listar_recorridos for sp_listar_recorridos;
+create or replace public synonym sp_listar_recorridos_medico for sp_listar_recorridos_medico;
+create or replace public synonym sp_listar_comentarios_recorrido for sp_listar_comentarios_recorrido;
+create or replace public synonym sp_asignar_especialidad_medico for sp_asignar_especialidad_medico;
+create or replace public synonym sp_quitar_especialidad_medico for sp_quitar_especialidad_medico;

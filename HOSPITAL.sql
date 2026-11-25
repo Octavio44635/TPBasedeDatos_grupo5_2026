@@ -499,19 +499,20 @@ insert into vacacion (
      to_date('2026-11-30','YYYY-MM-DD') );
 
 
-DECLARE
-   v_id_internacion NUMBER;
-BEGIN
+declare
+   v_id_internacion number;
+begin
    sp_registrar_internacion(
       p_dni            => '11111111',
       p_matricula      => 'M103',
       p_id_habitacion  => 1,
       p_nro_cama       => 1,
-      p_fecha_inicio   => to_date('2026-11-15','YYYY-MM-DD'),
-      p_fecha_fin      => NULL,
+      p_fecha_inicio   => to_date('2026-11-15',
+                            'YYYY-MM-DD'),
+      p_fecha_fin      => null,
       p_id_internacion => v_id_internacion
    );
-END;
+end;
 /
 
 -- Caso de prueba del TRIGGER trg_evitar_autoatencion (descomentar para probar que rechaza la autoatencion)
@@ -562,7 +563,6 @@ insert into comentario (
 -- Caso de prueba del TRIGGER trg_comentario_ronda (descomentar para verificar que rechaza comentario para internación cuya habitación no pertenece a la ronda del recorrido)
 -- INSERT INTO COMENTARIO (contenido, id_internacion, id_recorrido) VALUES ('Prueba habitación fuera de ronda', 1, 3);
 
-
 insert into especialidad ( nombre ) values
    ( 'Cardiología' );
 insert into especialidad ( nombre ) values
@@ -608,4 +608,3 @@ insert into tiene (
 -- INSERT INTO CUBIERTA_POR (numero_de_matricula, id_especialidad, id_guardia) VALUES ('M101', 1, 999);
 
 commit;
-
