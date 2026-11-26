@@ -2828,7 +2828,14 @@ create or replace procedure sp_internaciones_de_recorrido (
 begin
    open p_info_ronda for select r.id_ronda,
                                 ro.dia_semana,
-                                ro.turno
+                                ro.turno,
+                                (
+                                   select listagg('Hab #' || cp.id_habitacion, ', ') within group(
+                                       order by cp.id_habitacion
+                                   )
+                                     from compuesta_por cp
+                                    where cp.id_ronda = r.id_ronda
+                                ) as habitaciones
      from recorrido r
      left join ronda ro
    on r.id_ronda = ro.id_ronda

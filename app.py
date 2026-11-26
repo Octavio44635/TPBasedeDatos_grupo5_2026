@@ -4004,7 +4004,7 @@ class HospitalApp(tk.Tk):
             id_ronda = row_rec[0]
             dia_ronda = row_rec[1] or "N/A"
             turno_ronda = row_rec[2] or "N/A"
-            habs_str = f"Habitaciones de Ronda #{id_ronda}"
+            habs_str = row_rec[3] if len(row_rec) > 3 and row_rec[3] else None
 
             filas_int = cur_ints.fetchall()
             cur_ronda.close()
@@ -4021,16 +4021,24 @@ class HospitalApp(tk.Tk):
                 self.com_cb_internacion.set(opciones[0])
                 if hasattr(self, 'lbl_info_ronda_int'):
                     self.lbl_info_ronda_int.config(
-                        text=f"✓ Ronda #{id_ronda} ({dia_ronda} T{turno_ronda}) incluye: {habs_str}\n  {len(opciones)} internación(es) activa(s) en sus habitaciones.",
+                        text=f"✓ Ronda #{id_ronda} ({dia_ronda} T{turno_ronda}) incluye: {habs_str or f'Habitaciones de Ronda #{id_ronda}'}\n  {len(opciones)} internación(es) activa(s) en sus habitaciones.",
                         foreground="#276749"
                     )
             else:
-                self.com_cb_internacion.set("(No hay internaciones activas en las habitaciones de esta ronda)")
-                if hasattr(self, 'lbl_info_ronda_int'):
-                    self.lbl_info_ronda_int.config(
-                        text=f"⚠️ Ronda #{id_ronda} cubre: {habs_str}, pero actualmente no hay pacientes internados en esas habitaciones.",
-                        foreground="#C53030"
-                    )
+                if habs_str:
+                    self.com_cb_internacion.set("(No hay internaciones activas en las habitaciones de esta ronda)")
+                    if hasattr(self, 'lbl_info_ronda_int'):
+                        self.lbl_info_ronda_int.config(
+                            text=f"⚠️ Ronda #{id_ronda} cubre: {habs_str}, pero actualmente no hay pacientes internados en esas habitaciones.",
+                            foreground="#C53030"
+                        )
+                else:
+                    self.com_cb_internacion.set("(Esta ronda no tiene habitaciones asignadas)")
+                    if hasattr(self, 'lbl_info_ronda_int'):
+                        self.lbl_info_ronda_int.config(
+                            text=f"⚠️ Ronda #{id_ronda} no tiene habitaciones asignadas.",
+                            foreground="#C53030"
+                        )
 
         except Exception as e:
             self.log_error(f"Error al cargar internaciones de la ronda para recorrido #{id_recorrido}: {e}")
