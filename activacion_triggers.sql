@@ -632,3 +632,47 @@ select numero_de_DNI
 from INTERNACION 
 where numero_de_DNI = '09876543';
 rollback;
+
+-- listar_camas_disponibles: cantidad de camas libres por sector y detalle
+variable c_resumen refcursor;
+variable c_detalle refcursor;
+exec listar_camas_disponibles(:c_resumen, :c_detalle);
+print c_resumen;
+print c_detalle;
+
+-- listar_comentarios_internacion: comentarios de visitas médicas de la internación #1
+variable c_paciente refcursor;
+variable c_comentarios refcursor;
+exec listar_comentarios_internacion(1, :c_paciente, :c_comentarios);
+print c_paciente;
+print c_comentarios;
+
+-- sp_ocupar_cama_posee: intenta ocupar una cama ya OCUPADA (Hab 1, Cama 1)
+-- Dispara ORA-20019 y hace rollback interno (no modifica la BD)
+exec sp_ocupar_cama_posee(1, 1, 1);
+
+-- sp_modificar_guardia: prueba de atomicidad (cambia fecha/turno y asigna médico en vacaciones)
+-- M101 está de vacaciones el 20/12/2026 -> dispara ORA-20021 y revierte todo (incluyendo la guardia y la auditoría)
+insert into GUARDIA (
+    id_guardia,
+    turno,
+    fecha
+) values (
+    990,
+    'MAÑANA',
+    DATE '2026-12-05'
+);
+insert into CUBIERTA_POR (
+    numero_de_matricula,
+    id_especialidad,
+    id_guardia
+) values (
+    'M100',
+    2,
+    990
+);
+exec sp_modificar_guardia(990, DATE '2026-12-20', 'NOCHE', 'M101:1');
+-- Verificar que no quedó ni la guardia ni registros en auditoría (0 filas en ambos):
+select * from GUARDIA where id_guardia = 990;
+select * from AUDITORIA_GUARDIAS where id_guardia = 990;
+rollback;
